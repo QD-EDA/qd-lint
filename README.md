@@ -24,3 +24,39 @@ Exit codes: `0` only when every requested engine completes without warnings; `1`
 ## Scoped probe
 
 The Caliptra RTL v2.1.2 `caliptra_prim_secded.vf` top `caliptra_prim_secded_22_16_enc` was run with both installed engines with zero warnings. This covered that listed SECDED RTL hierarchy only; it did not run Caliptra unit tests/DV or establish signoff coverage.
+
+## Resolved input audit (opt-in)
+
+```sh
+./qd-lint check --filelist design.vf --top TOP --engine both \
+  --audit-inputs --json lint.json
+```
+
+`--audit-inputs` adds `input_manifest` and `input_manifest_sha256` to the report.
+The manifest records ordered sources/filelists/include directories/defines,
+selected top and engines, and per-file SHA-256 values. It inventories **all regular
+files recursively under explicitly declared include directories**, including
+files without HDL suffixes. Duplicate files are hashed once; argument ordering
+and duplicate arguments remain visible. Symlinks inside include trees, special
+files and unreadable entries fail with input exit code 2, before either engine
+runs. A root resolved by the existing filelist parser is recorded at its resolved
+absolute path. The legacy `source_snapshot_sha256` is unchanged.
+
+This is a conservative inventory, not a preprocessing dependency graph:
+`dependency_closure_complete` is always `false`. Source-relative, absolute and
+implicit tool includes outside those directories, libraries and concurrently
+modified files are not covered. Tool versions and argv remain in the engine
+results; tool binaries and implicit environment are not in the input fingerprint.
+Paths are absolute, so relocation changes the fingerprint. Unused include files
+also affect it. Do not use this hash alone for cache reuse or qualification.
+Use immutable inputs during a run, and put output reports outside input trees.
+Audit cost scales with files and bytes under the declared directories; hashing
+reads in 1 MiB chunks. Ordinary runs without this option retain their behavior.
+
+The fingerprint is SHA-256 of UTF-8 `json.dumps(input_manifest, sort_keys=True,
+separators=(",", ":"))` using Python's default ASCII escaping. It excludes raw
+engine logs and their nondeterministic timing telemetry; those logs are preserved.
+
+See [pilot evidence and replay commands](EVIDENCE.md) and the staged
+[qualification roadmap](ROADMAP.md). Neither this audit nor the pilots establishes
+complete source closure, functional correctness, or signoff.
