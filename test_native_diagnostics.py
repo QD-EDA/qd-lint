@@ -81,6 +81,56 @@ class NativeDiagnosticsTests(unittest.TestCase):
             self.assertNotEqual(result['classification'], 'clean')
             self.assertEqual(result['exit_status'], 0)
 
+    def test_sarif_optional_or_successful_invocations_preserve_clean(self):
+        for run in ({'results':[]}, {'results':[], 'invocations':[]},
+                    {'results':[], 'invocations':[{'executionSuccessful':True}]}):
+            code,result=self.run_case('verilator',json.dumps({'version':'2.1.0','runs':[run]}))
+            self.assertEqual(code,0)
+            self.assertEqual(result['native_diagnostics']['status'],'captured')
+
+    def test_sarif_failed_invocation_cannot_pass_on_zero_process_exit(self):
+        payload = json.dumps({'version':'2.1.0','runs':[{'results':[],
+            'invocations':[{'executionSuccessful':False}]}]})
+        code, result = self.run_case('verilator', payload)
+        self.assertEqual(code, 1)
+        self.assertEqual(result['exit_status'], 0)
+        self.assertEqual(result['classification'], 'error')
+        self.assertEqual(result['native_diagnostics']['raw'], payload)
+        self.assertEqual(result['native_diagnostics']['status'], 'captured')
+
+    def test_sarif_notifications_are_gated_across_all_runs_and_invocations(self):
+        for field in ('toolExecutionNotifications', 'toolConfigurationNotifications'):
+            for level, expected in [('error','error'), ('warning','warning'),
+                                    ('note','clean'), ('none','clean'), ('unexpected','error')]:
+                with self.subTest(field=field, level=level):
+                    payload = json.dumps({'version':'2.1.0','runs':[
+                        {'results':[], 'invocations':[{'executionSuccessful':True}]},
+                        {'results':[], 'invocations':[{'executionSuccessful':True},
+                            {'executionSuccessful':True, field:[{
+                                'level':level, 'message':{'text':'retained notification'}}]}]}]})
+                    code, result = self.run_case('verilator', payload)
+                    self.assertEqual(code, int(expected!='clean'))
+                    self.assertEqual(result['classification'], expected)
+                    self.assertEqual(result['native_diagnostics']['data'], json.loads(payload))
+
+    def test_sarif_malformed_invocations_and_notifications_fail_capture(self):
+        for invocations in (None, {}, [None], [{}], [{'executionSuccessful':'true'}],
+                            [{'executionSuccessful':1}],
+                            [{'executionSuccessful':True, 'toolExecutionNotifications':{}}],
+                            [{'executionSuccessful':True, 'toolConfigurationNotifications':[None]}]):
+            payload=json.dumps({'version':'2.1.0','runs':[{'results':[], 'invocations':invocations}]})
+            code, result=self.run_case('verilator',payload)
+            self.assertEqual(code,1)
+            self.assertEqual(result['native_diagnostics']['status'],'error')
+            self.assertEqual(result['native_diagnostics']['raw'],payload)
+
+    def test_sarif_absent_notification_level_fails_conservatively(self):
+        payload=json.dumps({'version':'2.1.0','runs':[{'invocations':[
+            {'executionSuccessful':True,'toolExecutionNotifications':[{'message':{'text':'unknown severity'}}]}]}]})
+        code,result=self.run_case('verilator',payload)
+        self.assertEqual(code,1)
+        self.assertEqual(result['classification'],'error')
+
     def test_invalid_sarif_retained(self):
         payload = '{"version":"2.1.0","runs":[{"tool":{} "invocations":[]}]}'
         code, result = self.run_case('verilator', payload)
