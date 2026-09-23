@@ -69,3 +69,10 @@ Local artifacts in `../evidence/lint-sarif-invocations/` retain tests, raw repor
 logs, engine binary hashes/version strings, exact argv and outcomes. They are not
 published release artifacts. This gate improves failure visibility; production
 qualification, complete dependency closure and broad rule coverage remain open.
+
+A fresh local clone of `959b50b` passed all 27 tests and reproduced all twelve
+plain/native outcomes (wrapper and engine exits, capture status and classification).
+This repeats workspaces on the same host/tool binaries, not independent engine
+builds. Local Python suites took 0.4–0.5 seconds; no peak-memory or large-report
+performance qualification was performed. The added gate is linear in inline
+invocations and notifications; the native JSON is still loaded fully in memory.
