@@ -130,7 +130,7 @@ def read_edam(path, top):
     for file in files:
         if (not isinstance(file, dict) or
                 set(file) - {'name', 'file_type', 'is_include_file', 'include_path', 'core'} or
-                file.get('file_type') not in ('systemVerilogSource', 'verilogSource') or
+                file.get('file_type') != 'systemVerilogSource' or
                 not isinstance(file.get('name'), str) or not file['name'] or
                 type(file.get('is_include_file', False)) is not bool):
             raise InputError('unsupported or malformed EDAM file entry')
@@ -150,6 +150,8 @@ def read_edam(path, top):
         else:
             if 'include_path' in file:
                 raise InputError('EDAM include_path on compilation source is unsupported')
+            if source.suffix.lower() != '.sv':
+                raise InputError('EDAM compilation sources require .sv; language overrides are unsupported')
             sources.append(source)
     if not sources:
         raise InputError('no EDAM compilation sources')

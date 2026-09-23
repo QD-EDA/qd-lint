@@ -67,7 +67,7 @@ waiver, deduplication or diagnostic suppression is implied.
 
 Exactly one of --filelist and --edam-json is required. The latter accepts a JSON
 serialization of generated EDAM 0.2.1, resolving paths relative to that file.
-Require the declared scalar toplevel to match --top. Accept ordered SV/Verilog
+Require the declared scalar toplevel to match --top. Accept ordered systemVerilogSource .sv
 sources and include-only files, with optional explicit include_path; preserve
 source duplicates and first-seen include-directory order. Require existing source
 files and include directories. Reject unknown top/file fields, duplicate JSON keys,

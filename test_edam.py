@@ -46,7 +46,7 @@ class EdamTests(unittest.TestCase):
                 self.data=saved
 
     def test_unsupported_and_malformed_files_are_rejected(self):
-        for patch in [{'file_type':'vlt'},{'name':'missing.sv'},{'is_include_file':'false'},
+        for patch in [{'file_type':'vlt'},{'file_type':'verilogSource'},{'name':'missing.sv'},{'is_include_file':'false'},
                       {'logical_name':'lib'},{'include_path':'inc'}, {'copyto':'elsewhere'}]:
             with self.subTest(patch=patch):
                 original=self.data['files'][1];self.data['files'][1]=dict(original,**patch)

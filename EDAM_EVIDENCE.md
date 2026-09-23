@@ -6,7 +6,7 @@ with the existing FuseSoC environment. Preserve the YAML's directory when emitti
 JSON. The source and include ordering was checked independently against Edalize
 0.6.3's `_get_fileset_files` / `_add_include_dir`, not another QD parser.
 
-Supported: scalar matching top, ordered systemVerilogSource/verilogSource entries,
+Supported: scalar matching top, ordered systemVerilogSource .sv compilation entries,
 is_include_file Boolean and optional include_path, plus preserved metadata in the
 hashed original configuration. The importer resolves filesystem paths; it does not
 expand environment variables, rerun generators, or establish native backend parity.
@@ -75,3 +75,7 @@ Python package versions are retained in ../evidence/pinmux-config/. That local
 bundle is development evidence, not a published qualification release. Cross-engine
 pinmux validation, independent Linux configuration replay, additional EDAM semantics,
 complete dependency closure, waivers and production qualification remain unproven.
+
+A fresh QD-Lint checkout passed all 45 tests. A second independent FuseSoC export
+repeated the pinmux result and all 221 observed file hashes after normalizing only
+the export-root prefix. This used the same host and application checkout.
