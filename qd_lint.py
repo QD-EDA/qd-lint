@@ -135,6 +135,36 @@ def audit_inputs(sources, incdirs, defines, filelists, top, engine):
             "scope": "listed files and recursive declared include-directory inventory"}
 
 
+def capture_dependencies(path, sources):
+    """Hash slang's observed files; this is not a hermetic dependency closure."""
+    result = {'status': 'error', 'raw': None, 'files': [],
+              'dependency_closure_complete': False}
+    try:
+        result['raw'] = path.read_bytes().decode('utf-8')
+        reported = result['raw'].splitlines()
+        if not reported or any(not name for name in reported):
+            raise ValueError('empty dependency list or filename')
+        # --all-deps uses one filename per line, with spaces left unescaped.
+        paths = {Path(name).resolve() for name in reported}
+        if not set(sources) <= paths:
+            raise ValueError('dependency list omits a source file')
+        for dependency in sorted(paths):
+            if not stat.S_ISREG(dependency.stat().st_mode):
+                raise ValueError(f'dependency is not a regular file: {dependency}')
+            digest = hashlib.sha256()
+            with dependency.open('rb') as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                    digest.update(chunk)
+            result['files'].append({'path': str(dependency), 'sha256': digest.hexdigest()})
+        encoded = json.dumps(result['files'], sort_keys=True, separators=(',', ':')).encode()
+        result.update(status='captured', observed_files_sha256=hashlib.sha256(encoded).hexdigest())
+    except (OSError, UnicodeError, ValueError, RuntimeError) as exc:
+        result['error'] = str(exc)
+        if isinstance(exc, UnicodeDecodeError):
+            result['raw_base64'] = base64.b64encode(exc.object).decode('ascii')
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(prog="qd-lint")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -149,7 +179,11 @@ def main():
                        help="capture engine JSON/SARIF as well as console diagnostics (requires --json)")
     check.add_argument("--slang-single-unit", action="store_true",
                        help="parse ordered slang sources as one compilation unit")
+    check.add_argument('--slang-dependencies', action='store_true',
+                       help='capture slang observed files and hashes (requires --json)')
     args = parser.parse_args()
+    if args.slang_dependencies and (args.engine == 'verilator' or not args.json):
+        parser.error('--slang-dependencies requires --engine slang or both and --json')
     if args.slang_single_unit and args.engine == 'verilator':
         parser.error("--slang-single-unit requires --engine slang or both")
     if args.native_diagnostics and not args.json:
@@ -184,57 +218,65 @@ def main():
         for define in defines:
             argv += ["-D" + define] if engine == "verilator" else ["-D", define]
         argv += list(map(str, sources))
-        native = None
-        if args.native_diagnostics:
+        native = dependencies = None
+        dependency_enabled = args.slang_dependencies and engine == 'slang'
+        if args.native_diagnostics or dependency_enabled:
             with tempfile.TemporaryDirectory(prefix="qd-lint-") as directory:
                 diagnostic_path = Path(directory) / "diagnostics.json"
                 option = "--diagnostics-sarif-output" if engine == "verilator" else "--diag-json"
-                argv += [option, str(diagnostic_path)]
+                if args.native_diagnostics:
+                    argv += [option, str(diagnostic_path)]
+                dependency_path = Path(directory) / 'dependencies.txt'
+                if dependency_enabled:
+                    argv += ['--all-deps', str(dependency_path)]
                 run = subprocess.run(argv, text=True, capture_output=True)
-                native = {"format": "sarif" if engine == "verilator" else "slang-json",
-                          "status": "error", "raw": None, "data": None, "error": None}
-                try:
-                    native["raw"] = diagnostic_path.read_bytes().decode("utf-8")
-                    data = json.loads(native["raw"])
-                    valid = (isinstance(data, list) and all(isinstance(d, dict) for d in data)) if engine == "slang" else (
-                        isinstance(data, dict) and data.get("version") == "2.1.0" and
-                        isinstance(data.get("runs"), list) and all(isinstance(r, dict) for r in data["runs"]))
-                    if not valid:
-                        raise ValueError("unsupported native diagnostic envelope")
-                    if engine == "verilator":
-                        if not data["runs"] or any(
-                            not isinstance(r.get("results", []), list) or
-                            any(not isinstance(d, dict) for d in r.get("results", [])) for r in data["runs"]
-                        ):
-                            raise ValueError("unsupported SARIF results")
-                        levels = [d.get("level", "warning") for r in data["runs"] for d in r.get("results", [])]
-                        for sarif_run in data['runs']:
-                            invocations = sarif_run.get('invocations', [])
-                            if not isinstance(invocations, list):
-                                raise ValueError('unsupported SARIF invocations')
-                            for invocation in invocations:
-                                if (not isinstance(invocation, dict) or
-                                        type(invocation.get('executionSuccessful')) is not bool):
-                                    raise ValueError('SARIF invocation requires Boolean executionSuccessful')
-                                if not invocation['executionSuccessful']:
-                                    levels.append('error')
-                                for field in ('toolExecutionNotifications', 'toolConfigurationNotifications'):
-                                    notifications = invocation.get(field, [])
-                                    if (not isinstance(notifications, list) or
-                                            any(not isinstance(n, dict) for n in notifications)):
-                                        raise ValueError('unsupported SARIF '+field)
-                                    # Descriptor/configuration severity inheritance is not resolved.
-                                    # Missing levels stay unknown/error rather than risking a clean run.
-                                    levels.extend(n.get('level') for n in notifications)
-                    else:
-                        levels = [d.get("severity") for d in data]
-                    native_classification = ("error" if any(level not in ("warning", "note", "none") for level in levels)
-                                             else "warning" if "warning" in levels else "clean")
-                    native.update(status="captured", data=data, classification=native_classification)
-                except (OSError, UnicodeError, ValueError) as exc:
-                    native["error"] = str(exc)
-                    if isinstance(exc, UnicodeDecodeError):
-                        native["raw_base64"] = base64.b64encode(exc.object).decode("ascii")
+                if dependency_enabled:
+                    dependencies = capture_dependencies(dependency_path, sources)
+                if args.native_diagnostics:
+                    native = {"format": "sarif" if engine == "verilator" else "slang-json",
+                              "status": "error", "raw": None, "data": None, "error": None}
+                    try:
+                        native["raw"] = diagnostic_path.read_bytes().decode("utf-8")
+                        data = json.loads(native["raw"])
+                        valid = (isinstance(data, list) and all(isinstance(d, dict) for d in data)) if engine == "slang" else (
+                            isinstance(data, dict) and data.get("version") == "2.1.0" and
+                            isinstance(data.get("runs"), list) and all(isinstance(r, dict) for r in data["runs"]))
+                        if not valid:
+                            raise ValueError("unsupported native diagnostic envelope")
+                        if engine == "verilator":
+                            if not data["runs"] or any(
+                                not isinstance(r.get("results", []), list) or
+                                any(not isinstance(d, dict) for d in r.get("results", [])) for r in data["runs"]
+                            ):
+                                raise ValueError("unsupported SARIF results")
+                            levels = [d.get("level", "warning") for r in data["runs"] for d in r.get("results", [])]
+                            for sarif_run in data['runs']:
+                                invocations = sarif_run.get('invocations', [])
+                                if not isinstance(invocations, list):
+                                    raise ValueError('unsupported SARIF invocations')
+                                for invocation in invocations:
+                                    if (not isinstance(invocation, dict) or
+                                            type(invocation.get('executionSuccessful')) is not bool):
+                                        raise ValueError('SARIF invocation requires Boolean executionSuccessful')
+                                    if not invocation['executionSuccessful']:
+                                        levels.append('error')
+                                    for field in ('toolExecutionNotifications', 'toolConfigurationNotifications'):
+                                        notifications = invocation.get(field, [])
+                                        if (not isinstance(notifications, list) or
+                                                any(not isinstance(n, dict) for n in notifications)):
+                                            raise ValueError('unsupported SARIF '+field)
+                                        # Descriptor/configuration severity inheritance is not resolved.
+                                        # Missing levels stay unknown/error rather than risking a clean run.
+                                        levels.extend(n.get('level') for n in notifications)
+                        else:
+                            levels = [d.get("severity") for d in data]
+                        native_classification = ("error" if any(level not in ("warning", "note", "none") for level in levels)
+                                                 else "warning" if "warning" in levels else "clean")
+                        native.update(status="captured", data=data, classification=native_classification)
+                    except (OSError, UnicodeError, ValueError) as exc:
+                        native["error"] = str(exc)
+                        if isinstance(exc, UnicodeDecodeError):
+                            native["raw_base64"] = base64.b64encode(exc.object).decode("ascii")
         else:
             run = subprocess.run(argv, text=True, capture_output=True)
         log = run.stdout + run.stderr
@@ -245,10 +287,16 @@ def main():
         if native is not None and native["status"] == "error":
             classification = "error"
             print(f"{engine}: native diagnostic capture failed: {native['error']}", file=sys.stderr)
+        if dependencies is not None and dependencies['status'] == 'error':
+            classification = 'error'
+            print(f"{engine}: dependency capture failed: {dependencies['error']}", file=sys.stderr)
         result = {"engine": engine, "executable": executable, "version": version, "argv": argv, "source_snapshot_sha256": digest.hexdigest(), "diagnostics": log, "exit_status": status, "classification": classification}
         if native is not None:
             result["native_diagnostics"] = native
             result["working_directory"] = os.getcwd()
+        if dependencies is not None:
+            result['dependencies'] = dependencies
+            result['working_directory'] = os.getcwd()
         results.append(result)
         print(f"[{engine}] {version}\nargv: {shlex.join(argv)}\nsnapshot: {digest.hexdigest()}\nresult: {classification} (exit {status})")
         if log:

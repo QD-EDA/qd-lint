@@ -117,3 +117,10 @@ messages alone do not. Missing or unknown notification severity fails
 conservatively; inherited notification severity is not resolved yet. Malformed
 invocation/notification containers fail capture. Absent optional invocations
 remain accepted. See [invocation evidence](SARIF_INVOCATION_EVIDENCE.md).
+
+`--slang-dependencies --json REPORT` captures slang's actual observed source and
+header paths, original dependency output, and SHA-256 file hashes. It works with
+`--engine slang` or `both` and can accompany native diagnostics. Missing or invalid
+capture fails the wrapper even if the engine exits zero. This remains an observed
+file inventory, not complete dependency closure or a safe incremental cache key.
+See [dependency evidence and limits](DEPENDENCY_EVIDENCE.md).
