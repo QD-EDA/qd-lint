@@ -48,3 +48,17 @@ unreadable or invalid UTF-8 dependency output, omitted source files, and missing
 or non-regular listed dependencies fail capture and wrapper status. Native engine
 status and console diagnostics remain intact. No dependency flags are passed to
 Verilator. `dependency_closure_complete` remains false; no caching is enabled.
+
+## Optional slang diagnostic projection
+
+`--normalize-diagnostics` requires slang-only native capture. Preserve one finding
+per captured native record and its order, with a JSON pointer relative to
+native_diagnostics.data. Copy severity/message and optional optionName as rule_id;
+never invent an ID. Missing locations are explicitly not-provided. Parse POSIX
+file:line:column from the right, accepting positive coordinates of at most ten
+digits; preserve the original path and form an absolute path relative to the
+recorded working directory without resolving symlinks. These are engine-reported
+coordinates, not physical-source verification. Unsupported fields or locations
+produce UNKNOWN normalization and wrapper exit 1; engine status remains unchanged.
+Other native fields remain reachable through the native pointer. No baseline,
+waiver, deduplication or diagnostic suppression is implied.
