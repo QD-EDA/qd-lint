@@ -95,6 +95,67 @@ def read_inputs(path):
     return sources, incdirs, defines, filelists
 
 
+def read_edam(path, top):
+    """Read a resolved, option-free EDAM 0.2.1 JSON configuration."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise InputError(f'duplicate EDAM key: {key}')
+            result[key] = value
+        return result
+
+    path = path.resolve()
+    try:
+        data = json.loads(path.read_text(), object_pairs_hook=unique)
+    except (ValueError, UnicodeError) as error:
+        raise InputError(f'invalid EDAM JSON: {error}') from error
+    allowed = {'version', 'name', 'toplevel', 'files', 'parameters', 'tool_options',
+               'flow_options', 'filters', 'hooks', 'vpi', 'cores', 'dependencies'}
+    if not isinstance(data, dict) or set(data) - allowed:
+        raise InputError('unsupported EDAM envelope or fields')
+    if data.get('version') != '0.2.1' or data.get('toplevel') != top:
+        raise InputError('EDAM requires version 0.2.1 and matching scalar toplevel')
+    for field, empty in [('parameters', {}), ('flow_options', {}), ('hooks', {}),
+                         ('filters', []), ('vpi', [])]:
+        if data.get(field, empty) != empty:
+            raise InputError(f'unsupported EDAM {field}; configuration cannot be dropped')
+    options = data.get('tool_options', {})
+    if not isinstance(options, dict) or any(value != {} for value in options.values()):
+        raise InputError('nonempty or malformed EDAM tool_options are unsupported')
+    files = data.get('files')
+    if not isinstance(files, list):
+        raise InputError('EDAM files must be an ordered array')
+    sources, incdirs, headers = [], [], []
+    for file in files:
+        if (not isinstance(file, dict) or
+                set(file) - {'name', 'file_type', 'is_include_file', 'include_path', 'core'} or
+                file.get('file_type') not in ('systemVerilogSource', 'verilogSource') or
+                not isinstance(file.get('name'), str) or not file['name'] or
+                type(file.get('is_include_file', False)) is not bool):
+            raise InputError('unsupported or malformed EDAM file entry')
+        source = (path.parent / file['name']).resolve()
+        if not source.is_file():
+            raise InputError(f'EDAM source file not found: {source}')
+        if file.get('is_include_file', False):
+            headers.append(source)
+            include = file.get('include_path')
+            if include is not None and (not isinstance(include, str) or not include):
+                raise InputError('EDAM include_path must be a nonempty string')
+            directory = (path.parent / include).resolve() if include is not None else source.parent
+            if not directory.is_dir():
+                raise InputError(f'EDAM include directory not found: {directory}')
+            if directory not in incdirs:
+                incdirs.append(directory)
+        else:
+            if 'include_path' in file:
+                raise InputError('EDAM include_path on compilation source is unsupported')
+            sources.append(source)
+    if not sources:
+        raise InputError('no EDAM compilation sources')
+    return sources, incdirs, [], [path] + headers
+
+
 def classify(log, status):
     if status:
         return "error"
@@ -200,7 +261,9 @@ def main():
     parser = argparse.ArgumentParser(prog="qd-lint")
     sub = parser.add_subparsers(dest="command", required=True)
     check = sub.add_parser("check")
-    check.add_argument("--filelist", required=True, type=Path, help="filelist or direct .sv/.v source")
+    inputs = check.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--filelist", type=Path, help="filelist or direct .sv/.v source")
+    inputs.add_argument('--edam-json', type=Path, help='resolved EDAM 0.2.1 JSON with no parameters or backend options')
     check.add_argument("--top", required=True)
     check.add_argument("--engine", choices=("verilator", "slang", "both"), default="both")
     check.add_argument("--json", type=Path)
@@ -224,7 +287,8 @@ def main():
     if args.native_diagnostics and not args.json:
         parser.error("--native-diagnostics requires --json to preserve the native report")
     try:
-        sources, incdirs, defines, filelists = read_inputs(args.filelist)
+        sources, incdirs, defines, filelists = (read_edam(args.edam_json, args.top) if args.edam_json
+                                               else read_inputs(args.filelist))
         manifest = audit_inputs(sources, incdirs, defines, filelists, args.top, args.engine) if args.audit_inputs else None
     except (InputError, OSError) as exc:
         print(f"qd-lint: {exc}", file=sys.stderr)
@@ -347,6 +411,9 @@ def main():
             print(log, end="" if log.endswith("\n") else "\n")
         failed |= classification != "clean"
     report = {"top": args.top, "source_snapshot_sha256": digest.hexdigest(), "results": results}
+    if args.edam_json:
+        report['input_format'] = 'edam-json-0.2.1'
+        report['configuration_file'] = str(args.edam_json.resolve())
     if args.slang_single_unit:
         report['slang_compilation_unit'] = 'single'
         if manifest is not None:

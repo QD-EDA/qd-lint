@@ -62,3 +62,18 @@ coordinates, not physical-source verification. Unsupported fields or locations
 produce UNKNOWN normalization and wrapper exit 1; engine status remains unchanged.
 Other native fields remain reachable through the native pointer. No baseline,
 waiver, deduplication or diagnostic suppression is implied.
+
+## Resolved EDAM JSON inputs
+
+Exactly one of --filelist and --edam-json is required. The latter accepts a JSON
+serialization of generated EDAM 0.2.1, resolving paths relative to that file.
+Require the declared scalar toplevel to match --top. Accept ordered SV/Verilog
+sources and include-only files, with optional explicit include_path; preserve
+source duplicates and first-seen include-directory order. Require existing source
+files and include directories. Reject unknown top/file fields, duplicate JSON keys,
+other file types, logical libraries, copy directives, and nonempty parameters,
+backend options, flow options, filters, hooks or VPI. Do not execute generators.
+The EDAM and all declared include-only files participate in the input snapshot;
+the legacy audit field filelists contains these configuration/header dependencies
+in EDAM mode. Record input_format and configuration_file in the JSON report.
+No behavior or output-shape change occurs for ordinary filelist inputs.
