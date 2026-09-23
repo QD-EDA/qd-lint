@@ -129,3 +129,10 @@ The [pinned slang CI lane](PINNED_SLANG_CI.md) builds a fixed compiler revision 
 its fetched dependencies, then compares four unchanged Caliptra/OpenTitan probes
 against the native engine filelist reader. Its evidence artifacts retain expected
 failures as well as positive results. This is a bounded integration gate.
+
+`--normalize-diagnostics --engine slang --native-diagnostics --json REPORT` adds
+one normalized finding per native JSON record, with severity, message, optional
+warning name, reported coordinates, and a JSON pointer back to the native record.
+Malformed fields remain visible and make normalization UNKNOWN and the wrapper
+fail. Original native data and console diagnostics stay intact. See
+[normalization limits and evidence](NORMALIZATION_EVIDENCE.md).

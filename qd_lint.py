@@ -165,6 +165,37 @@ def capture_dependencies(path, sources):
     return result
 
 
+def normalize_slang(data, working_directory):
+    """Project native diagnostics without claiming physical-source verification."""
+    findings, errors = [], []
+    for index, diagnostic in enumerate(data):
+        pointer = '/' + str(index)
+        finding = {'native_pointer': pointer, 'severity': diagnostic.get('severity'),
+                   'message': diagnostic.get('message'), 'rule_id': diagnostic.get('optionName'),
+                   'location': None, 'location_status': 'not-provided'}
+        if diagnostic.get('severity') not in ('error', 'fatal', 'warning', 'note', 'none'):
+            errors.append(pointer + ': unsupported severity')
+        if not isinstance(diagnostic.get('message'), str):
+            errors.append(pointer + ': message is not a string')
+        if 'optionName' in diagnostic and not isinstance(diagnostic['optionName'], str):
+            errors.append(pointer + ': optionName is not a string')
+        if 'location' in diagnostic:
+            finding['location_status'] = 'unknown'
+            location = diagnostic['location']
+            match = re.fullmatch(r'(.+):([0-9]{1,10}):([0-9]{1,10})', location) if isinstance(location, str) else None
+            if (match and int(match[2]) > 0 and int(match[3]) > 0 and
+                    not re.match(r'^[A-Za-z]:[\\/]', match[1]) and not match[1].startswith('<')):
+                finding['location'] = {'reported_path': match[1],
+                    'absolute_path': os.path.abspath(os.path.join(working_directory, match[1])),
+                    'line': int(match[2]), 'column': int(match[3]), 'source_verified': False}
+                finding['location_status'] = 'reported'
+            else:
+                errors.append(pointer + ': unsupported location; consult native report')
+        findings.append(finding)
+    return {'schema_version': 1, 'status': 'unknown' if errors else 'normalized',
+            'findings': findings, 'errors': errors}
+
+
 def main():
     parser = argparse.ArgumentParser(prog="qd-lint")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -181,7 +212,11 @@ def main():
                        help="parse ordered slang sources as one compilation unit")
     check.add_argument('--slang-dependencies', action='store_true',
                        help='capture slang observed files and hashes (requires --json)')
+    check.add_argument('--normalize-diagnostics', action='store_true',
+                       help='project slang native diagnostics with raw-record pointers (requires native capture)')
     args = parser.parse_args()
+    if args.normalize_diagnostics and (args.engine != 'slang' or not args.native_diagnostics):
+        parser.error('--normalize-diagnostics requires --engine slang and --native-diagnostics')
     if args.slang_dependencies and (args.engine == 'verilator' or not args.json):
         parser.error('--slang-dependencies requires --engine slang or both and --json')
     if args.slang_single_unit and args.engine == 'verilator':
@@ -287,10 +322,19 @@ def main():
         if native is not None and native["status"] == "error":
             classification = "error"
             print(f"{engine}: native diagnostic capture failed: {native['error']}", file=sys.stderr)
+        normalized = None
+        if args.normalize_diagnostics:
+            normalized = (normalize_slang(native['data'], os.getcwd()) if native['status'] == 'captured'
+                          else {'schema_version': 1, 'status': 'unknown', 'findings': [],
+                                'errors': ['native diagnostic capture failed']})
+            if normalized['status'] != 'normalized':
+                classification = 'error'
         if dependencies is not None and dependencies['status'] == 'error':
             classification = 'error'
             print(f"{engine}: dependency capture failed: {dependencies['error']}", file=sys.stderr)
         result = {"engine": engine, "executable": executable, "version": version, "argv": argv, "source_snapshot_sha256": digest.hexdigest(), "diagnostics": log, "exit_status": status, "classification": classification}
+        if normalized is not None:
+            result['normalized_diagnostics'] = normalized
         if native is not None:
             result["native_diagnostics"] = native
             result["working_directory"] = os.getcwd()

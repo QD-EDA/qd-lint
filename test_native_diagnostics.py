@@ -12,7 +12,7 @@ from qd_lint import main
 
 
 class NativeDiagnosticsTests(unittest.TestCase):
-    def run_case(self, engine, payload, status=0, log='', enabled=True):
+    def run_case(self, engine, payload, status=0, log='', enabled=True, normalize=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, report = root / 'a.sv', root / 'report.json'
@@ -34,7 +34,7 @@ class NativeDiagnosticsTests(unittest.TestCase):
 
             argv = ['qd-lint', 'check', '--filelist', str(source), '--top', 'a',
                     '--engine', engine, '--json', str(report)]
-            with patch('sys.argv', argv + (['--native-diagnostics'] if enabled else [])), \
+            with patch('sys.argv', argv + (['--native-diagnostics'] if enabled else []) + (['--normalize-diagnostics'] if normalize else [])), \
                  patch('qd_lint.shutil.which', return_value='/test/' + engine), \
                  patch('qd_lint.subprocess.run', side_effect=run), \
                  contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -152,6 +152,26 @@ class NativeDiagnosticsTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as error:
                 main()
         self.assertEqual(error.exception.code, 2)
+
+    def test_normalization_preserves_native_data_and_exit_status(self):
+        payload='[{"severity":"note","message":"global"}]'
+        code,result=self.run_case('slang',payload,normalize=True)
+        self.assertEqual(code,0)
+        self.assertEqual(result['normalized_diagnostics']['status'],'normalized')
+        self.assertEqual(result['native_diagnostics']['raw'],payload)
+        code,result=self.run_case('slang','[{"severity":"note","message":7}]',normalize=True)
+        self.assertEqual(code,1)
+        self.assertEqual(result['exit_status'],0)
+        self.assertEqual(result['normalized_diagnostics']['status'],'unknown')
+        code,result=self.run_case('slang','invalid',normalize=True)
+        self.assertEqual(code,1)
+        self.assertEqual(result['normalized_diagnostics']['status'],'unknown')
+
+    def test_normalization_rejects_unsupported_engine_or_missing_capture(self):
+        for engine,enabled in [('verilator',True),('slang',False)]:
+            with self.assertRaises(SystemExit) as error:
+                self.run_case(engine,'[]',enabled=enabled,normalize=True)
+            self.assertEqual(error.exception.code,2)
 
     def test_default_invocation_is_unchanged(self):
         code, result = self.run_case('slang', None, enabled=False)
