@@ -1,5 +1,30 @@
 # QD-Lint: reproducible project lint evidence
 
+## Full product destination and engine direction
+
+QD-Lint is intended to become a commercial-class RTL lint tool that can replace
+SpyGlass-style lint for explicitly qualified configurations, not merely wrap
+compiler warnings. Use slang as the primary SystemVerilog frontend and native
+semantic-diagnostic engine: its reusable compiler library provides parsing,
+type checking and elaboration. Build QD-specific structural, dataflow, control,
+project-policy and, where needed, formal-assisted checks on resolved designs.
+Keep Verilator as a separately versioned diagnostic/cross-check lane. Do not
+write another SystemVerilog parser or assume slang alone establishes SpyGlass
+rule coverage. Pin and evaluate the library/pyslang API before choosing the
+integration boundary; retain native diagnostics and stable provenance.
+
+Qualification needs a reviewed rule catalog and capability-gap matrix, seeded
+violations and clean counterexamples per rule, measured precision/recall on the
+pinned corpus, scale evidence and independent review. Compiler-only pilot
+qualification does not complete this product goal. Slang's supported language
+scope is SystemVerilog; VHDL/mixed-language support requires separate frontends
+and qualification, not an implied promise.
+
+Sources reviewed 2026-09-23:
+- https://www.sv-lang.com/user-manual.html
+- https://www.sv-lang.com/
+- https://www.synopsys.com/verification/static-and-formal-verification/vc-spyglass/vc-spyglass-lint.html
+
 ## Current capability
 
 Baseline `780acdfc0fcad0af377b68d33495a7c421bc261b`: four Python tests.
