@@ -72,10 +72,52 @@ pinned CI probes remain separate from this new local pinmux probe.
 
 Raw setup warnings, exported EDAM, native/wrapper results and complete resolved
 Python package versions are retained in ../evidence/pinmux-config/. That local
-bundle is development evidence, not a published qualification release. Cross-engine
-pinmux validation, independent Linux configuration replay, additional EDAM semantics,
-complete dependency closure, waivers and production qualification remain unproven.
+bundle is development evidence, not a published qualification release. Independent
+Linux configuration replay, additional EDAM semantics, complete dependency closure,
+waivers and production qualification remain unproven.
 
 A fresh QD-Lint checkout passed all 45 tests. A second independent FuseSoC export
 repeated the pinmux result and all 221 observed file hashes after normalizing only
 the export-root prefix. This used the same host and application checkout.
+
+## Verilator cross-check on the same resolved configuration
+
+`ci/run_pinmux_pilot.py` now compares both wrappers with independently assembled
+native commands. Edalize supplies the ordered 215 sources and four include
+directories; both QD input manifests must match that ordering. The script retains
+raw stdout/stderr, statuses, versions, exact commands, and elapsed times in its
+output directory. It compares native Verilator SARIF findings when that installed
+version advertises SARIF; otherwise it records `UNSUPPORTED` and still compares
+raw diagnostics. The pilot's own pinned-fileset assertion rejects a copied EDAM
+missing `pinmux_reg_pkg.sv`; the generic QD EDAM importer has no such IP rule.
+The runner requires the engine to fail
+when a copied EDAM omits the `pinmux` top source, and checks wrong-top rejection
+before engine invocation. No OpenTitan source is changed.
+
+Local replay on clean OpenTitan `7a3ad34b6d483f4d1d69ac670ddb1c45f1172e19`
+used Python 3.13.15, FuseSoC 2.4.5, Edalize 0.6.3, PyYAML 6.0.3, slang
+11.0.448+e222e7dc0 (binary SHA-256
+`c38c0fc380ac4c7c48434daa9245d18ad2638b23cd47e14aa82a4a4e7a783ab4`),
+and Verilator 5.050 (binary SHA-256
+`fb2cc573b1055cf096c90e1efc9966fe56bdb4b265c83590cf2a49f7a0defcdf`).
+Run `python ci/run_pinmux_pilot.py "$OPENTITAN_ROOT" "$NEW_EVIDENCE_DIR"`
+with those tools on `PATH`; the CI entry point is `ci/build_slang_pilots.sh`.
+The local output is `/tmp/qd-lint-pinmux-cross-engine-evidence5/`.
+
+Slang and its wrapper exit 0 with no findings. Direct Verilator and its wrapper
+both exit 1 with the same raw diagnostic and SARIF results: upstream
+`prim_diff_decode.sv:162:28` has a `WIDTHEXPAND` warning. QD retains Verilator's
+fatal-warning status; it does not waive or suppress the finding. Removing the top
+source from copied EDAM yields a slang top-module error. A separate development
+probe found that slang 11.0.448 accepts EDAM with `pinmux_reg_pkg.sv` omitted,
+which is why the pilot checks that required source explicitly rather than treating
+an empty diagnostic set as proof of configuration completeness.
+
+The Ubuntu workflow installs Verilator and records its actual package/version in
+the evidence artifact. Ubuntu 24.04's Verilator 5.020 predates [SARIF support added
+in 5.038](https://verilator.org/guide/latest/changes.html), so that CI lane checks
+raw diagnostic parity and labels native SARIF unsupported. The package is still a
+floating CI smoke lane, not a qualified engine pin. This result checks each
+wrapper against its corresponding direct engine; it does not establish that slang
+and Verilator implement equivalent rules. It is not a clean two-engine lint pass
+or production qualification.
