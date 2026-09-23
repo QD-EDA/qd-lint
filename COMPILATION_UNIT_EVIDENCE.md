@@ -66,6 +66,15 @@ Local raw logs, exact argv, report hashes, timings and replay script are in
 wrapper wall times with audit/native capture were 0.071–0.086 seconds across the
 five initial probes on this macOS host; this is not a scaling benchmark.
 
+A fresh QD-Lint clone passed all 22 tests and repeated all five pilot outcomes
+against the same clean application checkouts. Native findings matched after
+resolving locations against each report's working directory. The initial raw
+comparison correctly failed because slang renders the default SHA256 error with
+a relative path; both original reports remain retained. This is tool-workspace
+reproduction, not an independent application checkout or second-host qualification.
+The actual `oss-cad-suite/libexec/slang` binary SHA-256 was
+`d1a8064cfc5b1047d60217e770832bebbdaf10c5b6a5b9ba4a68181564678c7a`.
+
 The source-only legacy hash intentionally remains unchanged by compilation mode.
 The audited manifest hash changes. Defaults retain the old report shape and hash.
 Grouped compilation units, library search, full preprocessing dependency closure,
