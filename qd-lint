@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+from qd_lint import main
+import sys
+
+sys.exit(main())
