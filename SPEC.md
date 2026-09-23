@@ -40,3 +40,11 @@ and gate execution/configuration notifications alongside result diagnostics.
 Missing/unknown notification severity must not become clean. Preserve all raw
 content, actual process status and existing non-native behavior. This is a
 bounded gate, not full SARIF schema or severity-inheritance support.
+
+Optional `--slang-dependencies` requires a JSON report and slang participation.
+The slang result includes raw `--all-deps` output, absolute resolved paths and
+SHA-256 content hashes, and a hash of the sorted file inventory. Missing, empty,
+unreadable or invalid UTF-8 dependency output, omitted source files, and missing
+or non-regular listed dependencies fail capture and wrapper status. Native engine
+status and console diagnostics remain intact. No dependency flags are passed to
+Verilator. `dependency_closure_complete` remains false; no caching is enabled.
