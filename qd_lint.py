@@ -8,6 +8,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -100,6 +101,38 @@ def classify(log, status):
     return "clean"
 
 
+def audit_inputs(sources, incdirs, defines, filelists, top, engine):
+    """Inventory declared inputs; this is not an engine dependency graph."""
+    paths = set(filelists + sources)
+
+    def walk_error(error):
+        raise error
+
+    # ponytail: inventory entire include trees; use engine dependency output
+    # before introducing caching or claiming preprocessing closure.
+    for incdir in incdirs:
+        for directory, dirs, files in os.walk(incdir, onerror=walk_error):
+            for name in dirs + files:
+                path = Path(directory) / name
+                if path.is_symlink():
+                    raise InputError(f"input audit does not support symlink: {path}")
+            paths.update(Path(directory) / name for name in files)
+    inventory = []
+    for path in sorted(paths):
+        if not stat.S_ISREG(path.stat().st_mode):
+            raise InputError(f"input audit requires a regular file: {path}")
+        digest = hashlib.sha256()
+        with path.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(chunk)
+        inventory.append({"path": str(path), "sha256": digest.hexdigest()})
+    return {"schema_version": 1, "top": top, "engine_selection": engine,
+            "sources": list(map(str, sources)), "filelists": list(map(str, filelists)),
+            "include_directories": list(map(str, incdirs)), "defines": list(defines),
+            "files": inventory, "dependency_closure_complete": False,
+            "scope": "listed files and recursive declared include-directory inventory"}
+
+
 def main():
     parser = argparse.ArgumentParser(prog="qd-lint")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -108,9 +141,12 @@ def main():
     check.add_argument("--top", required=True)
     check.add_argument("--engine", choices=("verilator", "slang", "both"), default="both")
     check.add_argument("--json", type=Path)
+    check.add_argument("--audit-inputs", action="store_true",
+                       help="inventory declared include trees; not complete dependency closure")
     args = parser.parse_args()
     try:
         sources, incdirs, defines, filelists = read_inputs(args.filelist)
+        manifest = audit_inputs(sources, incdirs, defines, filelists, args.top, args.engine) if args.audit_inputs else None
     except (InputError, OSError) as exc:
         print(f"qd-lint: {exc}", file=sys.stderr)
         return 2
@@ -147,6 +183,10 @@ def main():
             print(log, end="" if log.endswith("\n") else "\n")
         failed |= classification != "clean"
     report = {"top": args.top, "source_snapshot_sha256": digest.hexdigest(), "results": results}
+    if manifest is not None:
+        fingerprint = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        report.update(input_manifest=manifest, input_manifest_sha256=fingerprint)
+        print(f"input manifest: {fingerprint} (dependency closure UNKNOWN)")
     if args.json:
         args.json.write_text(json.dumps(report, indent=2) + "\n")
     return 1 if failed else 0
