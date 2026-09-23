@@ -1,3 +1,4 @@
+import base64
 import contextlib
 import io
 import json
@@ -26,7 +27,7 @@ class NativeDiagnosticsTests(unittest.TestCase):
                 if enabled:
                     target = Path(argv[argv.index(option) + 1])
                     if payload is not None:
-                        target.write_text(payload)
+                        target.write_bytes(payload) if isinstance(payload, bytes) else target.write_text(payload)
                 else:
                     self.assertNotIn(option, argv)
                 return subprocess.CompletedProcess(argv, status, stdout='', stderr=log)
@@ -85,6 +86,22 @@ class NativeDiagnosticsTests(unittest.TestCase):
         code, result = self.run_case('verilator', payload)
         self.assertEqual(code, 1)
         self.assertEqual(result['native_diagnostics']['raw'], payload)
+
+    def test_invalid_utf8_bytes_are_retained(self):
+        payload = b'[{"message":"bad \xff"}]'
+        code, result = self.run_case('slang', payload)
+        self.assertEqual(code, 1)
+        native = result['native_diagnostics']
+        self.assertEqual(native['status'], 'error')
+        self.assertEqual(base64.b64decode(native['raw_base64']), payload)
+
+    def test_native_capture_requires_persistent_report(self):
+        with patch('sys.argv', ['qd-lint', 'check', '--filelist', 'a.sv',
+                                '--top', 'a', '--native-diagnostics']), \
+             contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                main()
+        self.assertEqual(error.exception.code, 2)
 
     def test_default_invocation_is_unchanged(self):
         code, result = self.run_case('slang', None, enabled=False)

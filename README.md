@@ -87,7 +87,7 @@ Unsupported engine flags are ordinary visible failures: no automatic fallback
 or second lint invocation. Invocations without this option are unchanged.
 
 The original native text is retained when UTF-8 decoding succeeds; on invalid
-UTF-8 the decoding error is recorded rather than substituting characters. Native
+UTF-8 the decoding error and original bytes (`raw_base64`) are recorded. Native
 reports can contain source excerpts. Temporary report paths and timing metadata
 make full reports unsuitable as deterministic fingerprints. This does not yet
 provide cross-engine rule policy, waivers, baselines or SARIF conformance certification.

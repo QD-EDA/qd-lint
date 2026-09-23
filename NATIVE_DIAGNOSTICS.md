@@ -8,10 +8,10 @@ red test exposed zero-status/native-warning handling before it was implemented.
 ## Tests and real probes
 
 From the repository root, `python3 -m unittest -v` and
-`/usr/bin/python3 -m unittest -v` pass all 15 tests on Python 3.14.7 and 3.9.6.
-Six new tests exercise both formats, clean empty output, engine failure, absent
+`/usr/bin/python3 -m unittest -v` pass all 17 tests on Python 3.14.7 and 3.9.6.
+Eight new tests exercise both formats, clean empty output, engine failure, absent
 and malformed reports, wrong shapes, silent-console native findings and unchanged
-default invocations. Controlled engine outputs test failure paths without requiring
+default invocations, required persistent output and invalid UTF-8 byte retention. Controlled engine outputs test failure paths without requiring
 new engine flags on the existing Ubuntu CI package. These tests do not establish
 compatibility with that package's native formats.
 

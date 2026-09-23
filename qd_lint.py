@@ -2,6 +2,7 @@
 """Small, deterministic filelist wrapper for Verilator and slang."""
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -208,6 +209,8 @@ def main():
                     native.update(status="captured", data=data, classification=native_classification)
                 except (OSError, UnicodeError, ValueError) as exc:
                     native["error"] = str(exc)
+                    if isinstance(exc, UnicodeDecodeError):
+                        native["raw_base64"] = base64.b64encode(exc.object).decode("ascii")
         else:
             run = subprocess.run(argv, text=True, capture_output=True)
         log = run.stdout + run.stderr
