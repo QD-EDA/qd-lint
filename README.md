@@ -93,3 +93,18 @@ make full reports unsuitable as deterministic fingerprints. This does not yet
 provide cross-engine rule policy, waivers, baselines or SARIF conformance certification.
 See [native capture evidence](NATIVE_DIAGNOSTICS.md) for the compatibility failure
 found in Verilator 5.050 and the supported evidence boundary.
+
+## Slang compilation-unit selection
+
+`--slang-single-unit` passes slang's `--single-unit`: ordered source files share
+macro and compilation-unit scope. Use it only for configurations that require
+this scope, such as the pinned Caliptra SHA256 filelist. It requires `--engine
+slang` or `both`; it changes only the slang invocation. There is no automatic retry
+with different semantics. Without the option, engine defaults remain unchanged.
+
+The report and optional input manifest record `slang_compilation_unit: single`,
+so the manifest fingerprint distinguishes this configuration. The legacy source
+snapshot still hashes files only. Neither fingerprint proves full input closure.
+Warnings and errors continue to fail the run. This does not execute assertions.
+See [compilation-unit evidence](COMPILATION_UNIT_EVIDENCE.md) for assertion-enabled
+Caliptra and OpenTitan probes, exact commands, and unsupported cases.

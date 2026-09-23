@@ -1,0 +1,3 @@
+# Assertion-enabled configuration; upstream files remain unchanged.
++define+CLP_ASSERT_ON
+-f ${CALIPTRA_ROOT}/src/sha256/config/sha256_ctrl.vf

@@ -147,7 +147,11 @@ def main():
                        help="inventory declared include trees; not complete dependency closure")
     check.add_argument("--native-diagnostics", action="store_true",
                        help="capture engine JSON/SARIF as well as console diagnostics (requires --json)")
+    check.add_argument("--slang-single-unit", action="store_true",
+                       help="parse ordered slang sources as one compilation unit")
     args = parser.parse_args()
+    if args.slang_single_unit and args.engine == 'verilator':
+        parser.error("--slang-single-unit requires --engine slang or both")
     if args.native_diagnostics and not args.json:
         parser.error("--native-diagnostics requires --json to preserve the native report")
     try:
@@ -173,6 +177,8 @@ def main():
         version_run = subprocess.run([executable, "--version"], text=True, capture_output=True)
         version = (version_run.stdout or version_run.stderr).strip()
         argv = [executable, "--lint-only", "--top-module", args.top] if engine == "verilator" else [executable, "--lint-only", "--top", args.top]
+        if engine == 'slang' and args.slang_single_unit:
+            argv.append('--single-unit')
         for incdir in incdirs:
             argv += ["-I" + str(incdir)] if engine == "verilator" else ["-I", str(incdir)]
         for define in defines:
@@ -231,6 +237,10 @@ def main():
             print(log, end="" if log.endswith("\n") else "\n")
         failed |= classification != "clean"
     report = {"top": args.top, "source_snapshot_sha256": digest.hexdigest(), "results": results}
+    if args.slang_single_unit:
+        report['slang_compilation_unit'] = 'single'
+        if manifest is not None:
+            manifest['slang_compilation_unit'] = 'single'
     if manifest is not None:
         fingerprint = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         report.update(input_manifest=manifest, input_manifest_sha256=fingerprint)
