@@ -136,3 +136,10 @@ warning name, reported coordinates, and a JSON pointer back to the native record
 Malformed fields remain visible and make normalization UNKNOWN and the wrapper
 fail. Original native data and console diagnostics stay intact. See
 [normalization limits and evidence](NORMALIZATION_EVIDENCE.md).
+
+For an already resolved configuration, `--edam-json design.eda.json` can replace
+`--filelist`. This accepts the documented bounded EDAM 0.2.1 subset and requires
+`--top` to match its scalar top. Serialize the generated EDAM as JSON beside the
+original YAML so relative paths retain their meaning. The importer preserves
+source/include order and rejects unsupported options before running any engine.
+See [EDAM import scope and pinmux evidence](EDAM_EVIDENCE.md).
