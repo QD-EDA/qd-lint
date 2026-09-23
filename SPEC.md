@@ -15,3 +15,12 @@ files and traversal/read failures before engines run. Always declare dependency
 closure incomplete. Preserve legacy hashes, diagnostics, status and default CLI
 behavior. Engine-based closure, caching, rule normalization and waivers remain
 future work in ROADMAP.md. EVIDENCE.md names the exact bounded real-design probes.
+
+## Native diagnostics capture
+
+`--native-diagnostics --json PATH` requests engine-native diagnostic reports in
+addition to ordinary console output. Preserve raw native text and parsed content,
+validate the supported envelope, retain engine exit status, and fail on missing
+or malformed native output. Native warnings/errors cannot become a clean pass.
+No silent fallback or diagnostic suppression. This is evidence capture, not full
+schema validation or cross-engine rule equivalence.

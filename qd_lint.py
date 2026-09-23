@@ -11,6 +11,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -143,7 +144,11 @@ def main():
     check.add_argument("--json", type=Path)
     check.add_argument("--audit-inputs", action="store_true",
                        help="inventory declared include trees; not complete dependency closure")
+    check.add_argument("--native-diagnostics", action="store_true",
+                       help="capture engine JSON/SARIF as well as console diagnostics (requires --json)")
     args = parser.parse_args()
+    if args.native_diagnostics and not args.json:
+        parser.error("--native-diagnostics requires --json to preserve the native report")
     try:
         sources, incdirs, defines, filelists = read_inputs(args.filelist)
         manifest = audit_inputs(sources, incdirs, defines, filelists, args.top, args.engine) if args.audit_inputs else None
@@ -172,11 +177,51 @@ def main():
         for define in defines:
             argv += ["-D" + define] if engine == "verilator" else ["-D", define]
         argv += list(map(str, sources))
-        run = subprocess.run(argv, text=True, capture_output=True)
+        native = None
+        if args.native_diagnostics:
+            with tempfile.TemporaryDirectory(prefix="qd-lint-") as directory:
+                diagnostic_path = Path(directory) / "diagnostics.json"
+                option = "--diagnostics-sarif-output" if engine == "verilator" else "--diag-json"
+                argv += [option, str(diagnostic_path)]
+                run = subprocess.run(argv, text=True, capture_output=True)
+                native = {"format": "sarif" if engine == "verilator" else "slang-json",
+                          "status": "error", "raw": None, "data": None, "error": None}
+                try:
+                    native["raw"] = diagnostic_path.read_bytes().decode("utf-8")
+                    data = json.loads(native["raw"])
+                    valid = (isinstance(data, list) and all(isinstance(d, dict) for d in data)) if engine == "slang" else (
+                        isinstance(data, dict) and data.get("version") == "2.1.0" and
+                        isinstance(data.get("runs"), list) and all(isinstance(r, dict) for r in data["runs"]))
+                    if not valid:
+                        raise ValueError("unsupported native diagnostic envelope")
+                    if engine == "verilator":
+                        if not data["runs"] or any(
+                            not isinstance(r.get("results", []), list) or
+                            any(not isinstance(d, dict) for d in r.get("results", [])) for r in data["runs"]
+                        ):
+                            raise ValueError("unsupported SARIF results")
+                        levels = [d.get("level", "warning") for r in data["runs"] for d in r.get("results", [])]
+                    else:
+                        levels = [d.get("severity") for d in data]
+                    native_classification = ("error" if any(level not in ("warning", "note", "none") for level in levels)
+                                             else "warning" if "warning" in levels else "clean")
+                    native.update(status="captured", data=data, classification=native_classification)
+                except (OSError, UnicodeError, ValueError) as exc:
+                    native["error"] = str(exc)
+        else:
+            run = subprocess.run(argv, text=True, capture_output=True)
         log = run.stdout + run.stderr
         status = run.returncode
         classification = classify(log, status)
+        if native is not None and classification != "error" and native.get("classification", "clean") != "clean":
+            classification = native["classification"]
+        if native is not None and native["status"] == "error":
+            classification = "error"
+            print(f"{engine}: native diagnostic capture failed: {native['error']}", file=sys.stderr)
         result = {"engine": engine, "executable": executable, "version": version, "argv": argv, "source_snapshot_sha256": digest.hexdigest(), "diagnostics": log, "exit_status": status, "classification": classification}
+        if native is not None:
+            result["native_diagnostics"] = native
+            result["working_directory"] = os.getcwd()
         results.append(result)
         print(f"[{engine}] {version}\nargv: {shlex.join(argv)}\nsnapshot: {digest.hexdigest()}\nresult: {classification} (exit {status})")
         if log:
