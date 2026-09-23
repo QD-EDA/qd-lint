@@ -143,3 +143,8 @@ For an already resolved configuration, `--edam-json design.eda.json` can replace
 original YAML so relative paths retain their meaning. The importer preserves
 source/include order and rejects unsupported options before running any engine.
 See [EDAM import scope and pinmux evidence](EDAM_EVIDENCE.md).
+
+The pinned Linux pilot also resolves Earlgrey pinmux with explicit upstream
+technology/top mappings and compares EDAM import against Edalize's native reader.
+Its resolver environment is version/hash pinned; source-selection warnings and
+negative-case evidence are retained. See [the CI contract](PINNED_SLANG_CI.md).

@@ -47,6 +47,14 @@ python3 -m unittest -v > "$work/evidence/python-tests.log" 2>&1
 /usr/bin/time -v -o "$work/evidence/resource.log" \
   python3 ci/run_slang_pilots.py "$work/caliptra" "$work/opentitan" "$work/evidence/pilot" \
   > "$work/evidence/pilot.log" 2>&1
+python3 -m venv "$work/config-env"
+"$work/config-env/bin/python" -m pip install --disable-pip-version-check --require-hashes \
+  --only-binary=:all: -r ci/pinmux-requirements.txt > "$work/evidence/config-install.log" 2>&1
+"$work/config-env/bin/python" -m pip freeze > "$work/evidence/config-packages.txt"
+export PATH="$work/config-env/bin:$PATH"
+/usr/bin/time -v -o "$work/evidence/pinmux-resource.log" \
+  python ci/run_pinmux_pilot.py "$work/opentitan" "$work/evidence/pinmux" \
+  > "$work/evidence/pinmux.log" 2>&1
 for source in slang fmt boost_regex mimalloc tomlplusplus caliptra opentitan; do
   git -C "$work/$source" diff --exit-code
   git -C "$work/$source" diff --cached --exit-code

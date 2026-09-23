@@ -57,3 +57,36 @@ This lane proves bounded wrapper/engine integration when it passes. The direct
 oracle is the same compiler with a different filelist reader, not independent HDL
 semantics. It does not establish complete dependencies, cache safety, full-chip
 lint, reviewed rule policy, waivers, baselines or production qualification.
+
+## Earlgrey pinmux EDAM lane
+
+The same job now creates a separate Python environment for FuseSoC 2.4.5 and
+Edalize 0.6.3. All thirteen resolved Python packages have exact versions and
+SHA-256 wheel hashes in ci/pinmux-requirements.txt, selected for Ubuntu x86-64 /
+CPython 3.12. The complete dependency set was verified using pip's hash-checking
+resolver with that platform/ABI. This lock is not a portable macOS environment;
+the supported Linux runner is intentional. System packages remain recorded,
+not hermetically pinned.
+
+`ci/run_pinmux_pilot.py OPENTITAN_ROOT NEW_OUTPUT_DIRECTORY` applies the pinned
+upstream generic-primitive and Earlgrey mappings via FuseSoC. It rejects
+non-deterministic selections and validates the exact 224-entry manifest,
+215-source/four-include-directory ordering, generic technology, Earlgrey constants
+and pinmux register package. QD's EDAM importer must match Edalize's own reader.
+A separate native slang invocation must match zero diagnostics and all 221 observed
+file hashes. A deliberately mismatched CLI top must fail before producing a report.
+Application sources remain unchanged. Backend deprecation warnings stay in the raw
+resolver logs; no compiler warnings or waiver files are suppressed.
+
+The artifact adds package installation/freeze logs, resolver logs, exported EDAM
+and original source-directory context, wrapper and native results, exact commands,
+negative-case logs, timings and peak RSS. Exported application source copies are
+excluded from upload; recreate them using the archived pins and setup command.
+The existing four Caliptra/OpenTitan probes and all unit tests still run first.
+
+Local validation: the complete pinmux runner passes with the recorded macOS tools
+and isolated resolver environment; the missing-tool invocation fails explicitly.
+All 45 tests pass, shell syntax is valid, and the Linux wheel lock resolves with
+--require-hashes. The added Linux pinmux lane awaits CI; this does not claim
+production qualification or full upstream DV parity. See EDAM_EVIDENCE.md for the
+configuration contract and remaining limits.
