@@ -108,3 +108,12 @@ snapshot still hashes files only. Neither fingerprint proves full input closure.
 Warnings and errors continue to fail the run. This does not execute assertions.
 See [compilation-unit evidence](COMPILATION_UNIT_EVIDENCE.md) for assertion-enabled
 Caliptra and OpenTitan probes, exact commands, and unsupported cases.
+
+SARIF capture also checks every inline invocation: `executionSuccessful: false`
+forces an error even if the process exits zero and `results` is empty. Present
+invocations require a Boolean success field. Execution/configuration notifications
+are retained and gated by explicit severity: warnings/errors fail, notes/trace
+messages alone do not. Missing or unknown notification severity fails
+conservatively; inherited notification severity is not resolved yet. Malformed
+invocation/notification containers fail capture. Absent optional invocations
+remain accepted. See [invocation evidence](SARIF_INVOCATION_EVIDENCE.md).

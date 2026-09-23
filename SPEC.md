@@ -31,3 +31,12 @@ schema validation or cross-engine rule equivalence.
 for slang only, records the choice in reports and audited fingerprints, and rejects
 a Verilator-only invocation. Defaults and diagnostic gating remain unchanged.
 This does not support arbitrary compilation-unit groups or library filelists.
+
+## SARIF invocation completeness gate
+
+In native capture, inspect all inline SARIF invocations in all runs. Require
+Boolean executionSuccessful on present invocation objects, fail false values,
+and gate execution/configuration notifications alongside result diagnostics.
+Missing/unknown notification severity must not become clean. Preserve all raw
+content, actual process status and existing non-native behavior. This is a
+bounded gate, not full SARIF schema or severity-inheritance support.

@@ -208,6 +208,24 @@ def main():
                         ):
                             raise ValueError("unsupported SARIF results")
                         levels = [d.get("level", "warning") for r in data["runs"] for d in r.get("results", [])]
+                        for sarif_run in data['runs']:
+                            invocations = sarif_run.get('invocations', [])
+                            if not isinstance(invocations, list):
+                                raise ValueError('unsupported SARIF invocations')
+                            for invocation in invocations:
+                                if (not isinstance(invocation, dict) or
+                                        type(invocation.get('executionSuccessful')) is not bool):
+                                    raise ValueError('SARIF invocation requires Boolean executionSuccessful')
+                                if not invocation['executionSuccessful']:
+                                    levels.append('error')
+                                for field in ('toolExecutionNotifications', 'toolConfigurationNotifications'):
+                                    notifications = invocation.get(field, [])
+                                    if (not isinstance(notifications, list) or
+                                            any(not isinstance(n, dict) for n in notifications)):
+                                        raise ValueError('unsupported SARIF '+field)
+                                    # Descriptor/configuration severity inheritance is not resolved.
+                                    # Missing levels stay unknown/error rather than risking a clean run.
+                                    levels.extend(n.get('level') for n in notifications)
                     else:
                         levels = [d.get("severity") for d in data]
                     native_classification = ("error" if any(level not in ("warning", "note", "none") for level in levels)
