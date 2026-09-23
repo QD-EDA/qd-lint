@@ -60,3 +60,36 @@ engine logs and their nondeterministic timing telemetry; those logs are preserve
 See [pilot evidence and replay commands](EVIDENCE.md) and the staged
 [qualification roadmap](ROADMAP.md). Neither this audit nor the pilots establishes
 complete source closure, functional correctness, or signoff.
+
+## Native diagnostic capture (opt-in)
+
+```sh
+./qd-lint check --filelist design.vf --top TOP --engine both \
+  --native-diagnostics --json lint.json
+```
+
+This requests [slang JSON](https://sv-lang.com/command-line-ref.html#diagnostic-control)
+with `--diag-json FILE` and [Verilator SARIF](https://verilator.org/guide/latest/exe_verilator.html#cmdoption-diagnostics-sarif-output)
+with `--diagnostics-sarif-output FILE`. Console diagnostics remain enabled.
+`--json` is required so the native reports survive temporary-file cleanup.
+Each engine result adds `native_diagnostics` with `format`, `status`, original
+`raw` text, parsed `data`, and an `error` if capture failed. Native locations,
+rule identifiers, source ranges, notes and extra fields are retained as emitted,
+not flattened into a lossy common format. Paths must be interpreted against the
+invocation working directory, recorded in the native-capture result.
+
+Missing output, invalid JSON/UTF-8, unsupported envelopes or malformed result
+containers make capture fail and the wrapper exit 1, even if the engine exits 0.
+`exit_status` always remains the engine's status. Native warnings/errors also
+prevent a clean result when console output is empty; unknown severity is treated
+as error. Envelope checks are not full schema or diagnostic-completeness validation.
+Unsupported engine flags are ordinary visible failures: no automatic fallback
+or second lint invocation. Invocations without this option are unchanged.
+
+The original native text is retained when UTF-8 decoding succeeds; on invalid
+UTF-8 the decoding error and original bytes (`raw_base64`) are recorded. Native
+reports can contain source excerpts. Temporary report paths and timing metadata
+make full reports unsuitable as deterministic fingerprints. This does not yet
+provide cross-engine rule policy, waivers, baselines or SARIF conformance certification.
+See [native capture evidence](NATIVE_DIAGNOSTICS.md) for the compatibility failure
+found in Verilator 5.050 and the supported evidence boundary.
