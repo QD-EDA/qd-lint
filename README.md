@@ -124,3 +124,8 @@ header paths, original dependency output, and SHA-256 file hashes. It works with
 capture fails the wrapper even if the engine exits zero. This remains an observed
 file inventory, not complete dependency closure or a safe incremental cache key.
 See [dependency evidence and limits](DEPENDENCY_EVIDENCE.md).
+
+The [pinned slang CI lane](PINNED_SLANG_CI.md) builds a fixed compiler revision and
+its fetched dependencies, then compares four unchanged Caliptra/OpenTitan probes
+against the native engine filelist reader. Its evidence artifacts retain expected
+failures as well as positive results. This is a bounded integration gate.
