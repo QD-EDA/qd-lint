@@ -24,3 +24,10 @@ validate the supported envelope, retain engine exit status, and fail on missing
 or malformed native output. Native warnings/errors cannot become a clean pass.
 No silent fallback or diagnostic suppression. This is evidence capture, not full
 schema validation or cross-engine rule equivalence.
+
+## Explicit slang compilation unit
+
+`--slang-single-unit` selects the engine's native ordered single compilation unit
+for slang only, records the choice in reports and audited fingerprints, and rejects
+a Verilator-only invocation. Defaults and diagnostic gating remain unchanged.
+This does not support arbitrary compilation-unit groups or library filelists.
