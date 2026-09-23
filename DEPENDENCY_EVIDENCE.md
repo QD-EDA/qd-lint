@@ -57,3 +57,8 @@ Repeat with the SECDED filelists/tops from EVIDENCE.md, and the original Caliptr
 SHA256 filelist without single-unit options for the negative case. Exact argv,
 raw reports and local replay script are in `../evidence/lint-dependencies/`;
 these are development evidence, not published qualification artifacts.
+
+A fresh QD-Lint clone repeated all 33 tests and all four real-design probes.
+Resolved dependency inventories and their hashes matched exactly across tool
+workspaces. This used the same host and application checkouts; it is not a
+second-host qualification.
