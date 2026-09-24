@@ -72,6 +72,32 @@ class InputAuditTests(unittest.TestCase):
                 self.assertEqual(report['input_consistency']['status'], 'error' if remove else 'stable')
                 self.assertEqual(report['results'][0]['classification'], 'clean')
 
+    def test_audited_run_detects_removed_empty_include_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            include = root / 'inc'
+            include.mkdir()
+            source = root / 'a.sv'
+            source.write_text('module a; endmodule\n')
+            filelist = root / 'design.vf'
+            filelist.write_text('+incdir+inc a.sv\n')
+            output = root / 'report.json'
+
+            def run(argv, **kwargs):
+                if '--version' in argv:
+                    return subprocess.CompletedProcess(argv, 0, 'fake 1.0\n', '')
+                include.rmdir()
+                return subprocess.CompletedProcess(argv, 0, '', '')
+
+            with patch('sys.argv', ['qd-lint', 'check', '--filelist', str(filelist),
+                                    '--top', 'a', '--engine', 'slang', '--audit-inputs',
+                                    '--json', str(output)]), \
+                 patch('qd_lint.shutil.which', return_value='/fake/slang'), \
+                 patch('qd_lint.subprocess.run', side_effect=run), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(), 1)
+            self.assertEqual(json.loads(output.read_text())['input_consistency']['status'], 'error')
+
     def test_repeatability_content_and_configuration_sensitivity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
