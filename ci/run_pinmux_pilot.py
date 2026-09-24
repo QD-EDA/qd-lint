@@ -41,8 +41,7 @@ assert fusesoc and slang and verilator, 'FuseSoC, slang, and Verilator are manda
 for name, tool in [('fusesoc',fusesoc),('slang',slang),('verilator',verilator)]:
     assert run(name+'-version',[tool,'--version']).returncode == 0
 help_result = run('verilator-help',[verilator,'--help'])
-verilator_sarif = b'--diagnostics-sarif-output' in help_result.stdout + help_result.stderr
-(out/'verilator-sarif-status.txt').write_text('available\n' if verilator_sarif else 'UNSUPPORTED by this Verilator\n')
+assert b'--diagnostics-sarif-output' in help_result.stdout + help_result.stderr
 setup = run('resolve',[fusesoc,'--cores-root='+str(opentitan),'run',
     '--mapping=lowrisc:prim_generic:all:0.1','--mapping=lowrisc:systems:top_earlgrey:0.1',
     '--target=default','--tool=icarus','--setup','--build-root='+str(out/'build'),
@@ -91,10 +90,8 @@ assert len(paths) == 221
 assert {str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths} == {
     f['path']:f['sha256'] for f in result['dependencies']['files']}
 verilator_args = [sys.executable,str(repo/'qd_lint.py'),'check','--edam-json',str(export),
-    '--top','pinmux','--engine','verilator','--audit-inputs']
-if verilator_sarif:
-    verilator_args.append('--native-diagnostics')
-verilator_args += ['--json',str(out/'verilator-lint.json')]
+    '--top','pinmux','--engine','verilator','--audit-inputs','--native-diagnostics',
+    '--json',str(out/'verilator-lint.json')]
 wrapped_verilator = run('verilator-wrapper',verilator_args)
 verilator_report = json.loads((out/'verilator-lint.json').read_text())
 verilator_result = verilator_report['results'][0]
@@ -103,18 +100,21 @@ assert verilator_report['input_manifest']['include_directories'] == report['inpu
 verilator_native = [verilator,'--lint-only','--top-module','pinmux']
 verilator_native += ['-I'+str(include) for include in includes]
 verilator_native += [str((manifest.parent/f.name).resolve()) for f in sources]
-if verilator_sarif:
-    verilator_native += ['--diagnostics-sarif-output',str(out/'verilator-native.sarif')]
+verilator_native += ['--diagnostics-sarif-output',str(out/'verilator-native.sarif')]
 direct_verilator = run('verilator-native',verilator_native,manifest.parent)
 assert direct_verilator.returncode == verilator_result['exit_status'] == wrapped_verilator.returncode
 assert (direct_verilator.stdout + direct_verilator.stderr).decode() == verilator_result['diagnostics']
-if verilator_sarif:
-    assert verilator_result['native_diagnostics']['status'] == 'captured'
-    direct_sarif = json.loads((out/'verilator-native.sarif').read_text())
-    assert [sarif_run['results'] for sarif_run in direct_sarif['runs']] == [
-        sarif_run['results'] for sarif_run in verilator_result['native_diagnostics']['data']['runs']]
-else:
-    assert 'native_diagnostics' not in verilator_result
+assert verilator_result['native_diagnostics']['status'] == 'captured'
+direct_sarif = json.loads((out/'verilator-native.sarif').read_text())
+assert [sarif_run['results'] for sarif_run in direct_sarif['runs']] == [
+    sarif_run['results'] for sarif_run in verilator_result['native_diagnostics']['data']['runs']]
+width_warnings = [finding for sarif_run in direct_sarif['runs'] for finding in sarif_run['results']
+                  if finding.get('ruleId') == 'WIDTHEXPAND' and finding.get('level') == 'warning']
+assert len(width_warnings) == 1
+location = width_warnings[0]['locations'][0]['physicalLocation']
+assert location['artifactLocation']['uri'].endswith('/prim_diff_decode.sv')
+assert (location['region']['startLine'], location['region']['startColumn']) == (162, 28)
+assert verilator_result['classification'] == 'error' and verilator_result['exit_status'] != 0
 missing_data = dict(data, files=[f for f in data['files'] if not f['name'].endswith('/pinmux_reg_pkg.sv')])
 assert len(missing_data['files']) == len(data['files']) - 1
 try:

@@ -20,6 +20,7 @@ fetch fmt fmtlib/fmt 1be298e1bd68957e4cd352e1f676f00e07dcfb57
 fetch boost_regex MikePopoloski/regex 2b3ac0834f31086c6e3c0e0ceb8516e427d5c39d
 fetch mimalloc microsoft/mimalloc acf2fdd329f9dc2a7ffe3f12a133fe7175e39378
 fetch tomlplusplus marzer/tomlplusplus 30172438cee64926dc41fdd9c11fb3ba5b2ba9de
+fetch verilator verilator/verilator 848d926ebd4addacacd294dc84e35d9d4ae8078c
 fetch caliptra chipsalliance/caliptra-rtl 49370266d12cb0c4a8f71b3a0ff7e54ba7d4866e
 fetch opentitan lowRISC/opentitan 7a3ad34b6d483f4d1d69ac670ddb1c45f1172e19
 uname -a > "$work/evidence/host.txt"
@@ -42,6 +43,18 @@ cp "$work/build/CMakeCache.txt" "$work/evidence/"
 export PATH="$work/build/bin:$PATH"
 slang --version > "$work/evidence/slang-version.txt"
 sha256sum "$work/build/bin/slang" > "$work/evidence/slang-binary.sha256"
+(
+  cd "$work/verilator"
+  unset VERILATOR_ROOT
+  autoconf > "$work/evidence/verilator-autoconf.log" 2>&1
+  ./configure --prefix="$work/verilator-prefix" > "$work/evidence/verilator-configure.log" 2>&1
+  make -j2 > "$work/evidence/verilator-build.log" 2>&1
+  make install > "$work/evidence/verilator-install.log" 2>&1
+)
+unset VERILATOR_ROOT
+export PATH="$work/verilator-prefix/bin:$PATH"
+verilator --version > "$work/evidence/verilator-version.txt"
+sha256sum "$work/verilator-prefix/bin/verilator_bin" > "$work/evidence/verilator-binary.sha256"
 cd "$repo"
 python3 -m unittest -v > "$work/evidence/python-tests.log" 2>&1
 /usr/bin/time -v -o "$work/evidence/resource.log" \
@@ -55,7 +68,7 @@ export PATH="$work/config-env/bin:$PATH"
 /usr/bin/time -v -o "$work/evidence/pinmux-resource.log" \
   python ci/run_pinmux_pilot.py "$work/opentitan" "$work/evidence/pinmux" \
   > "$work/evidence/pinmux.log" 2>&1
-for source in slang fmt boost_regex mimalloc tomlplusplus caliptra opentitan; do
+for source in slang fmt boost_regex mimalloc tomlplusplus verilator caliptra opentitan; do
   git -C "$work/$source" diff --exit-code
   git -C "$work/$source" diff --cached --exit-code
 done
