@@ -158,3 +158,16 @@ The pinned Linux pilot also resolves Earlgrey pinmux with explicit upstream
 technology/top mappings and compares EDAM import against Edalize's native reader.
 Its resolver environment is version/hash pinned; source-selection warnings and
 negative-case evidence are retained. See [the CI contract](PINNED_SLANG_CI.md).
+
+`--edam-source-root ROOT` with `--edam-json` and `--audit-inputs` adds a
+`portable_edam_identity` for comparing exports from relocated checkouts. It
+normalizes the EDAM's `core_file` paths under ROOT and declared export paths,
+then hashes the complete selected EDAM, source-core bytes and audited declared
+inputs. Core metadata outside the pinned `core_file`/`dependencies`/null-license
+shape, paths outside either root, and missing files fail before lint. The raw
+absolute-path manifest and legacy hashes remain in the report. A second identity
+check after lint reports `stable`, `changed` or `error`; changes fail the run.
+An EDAM edit while preparing the initial inputs fails before either engine runs.
+This identity excludes tool binaries, implicit dependencies and unobserved
+changes restored between checks. It is comparison evidence, not a cache key or
+qualification claim. See [the two-checkout pinmux probe](PORTABLE_EDAM_EVIDENCE.md).

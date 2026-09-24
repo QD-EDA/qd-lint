@@ -77,3 +77,17 @@ The EDAM and all declared include-only files participate in the input snapshot;
 the legacy audit field filelists contains these configuration/header dependencies
 in EDAM mode. Record input_format and configuration_file in the JSON report.
 No behavior or output-shape change occurs for ordinary filelist inputs.
+
+## Optional portable EDAM identity
+
+`--edam-source-root ROOT` requires `--edam-json` and `--audit-inputs`. Resolve
+every `cores[*].core_file` beneath ROOT and every declared export input beneath
+the EDAM directory. In this bounded mode accept only core records with
+`core_file`, string-list `dependencies`, and null `license`; reject other shapes,
+missing files and paths leaving their roots. Hash the complete EDAM after
+normalizing core paths, every core file's bytes, and the existing audited input
+manifest after normalizing export paths and replacing the raw EDAM file hash with
+the canonical EDAM. Reject an EDAM byte change between initial read and prepared
+manifest/identity before running engines. Preserve raw hashes/diagnostics. Recompute after the engines;
+changed or unreadable inputs fail while retaining engine status. This does not
+claim dependency closure, path-independent diagnostics, or safe cache reuse.

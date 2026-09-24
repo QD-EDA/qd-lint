@@ -63,12 +63,16 @@ export.write_text(json.dumps(data,indent=2)+'\n')
 shutil.copyfile(export,out/'resolved-edam.json')
 (out/'edam-source-directory.txt').write_text(str(manifest.parent)+'\n')
 wrapper_args = [sys.executable,str(repo/'qd_lint.py'),'check','--edam-json',str(export),
-    '--top','pinmux','--engine','slang','--slang-single-unit','--audit-inputs',
+    '--edam-source-root',str(opentitan),'--top','pinmux','--engine','slang',
+    '--slang-single-unit','--audit-inputs',
     '--slang-dependencies','--native-diagnostics','--normalize-diagnostics',
     '--json',str(out/'lint.json')]
 assert run('wrapper',wrapper_args).returncode == 0
 report = json.loads((out/'lint.json').read_text())
 result = report['results'][0]
+assert report['portable_edam_consistency']['status'] == 'stable'
+assert len(report['portable_edam_identity']['payload']['core_files']) == 80
+assert report['portable_edam_identity']['sha256'] == 'd303bdd63d30dea6e95a493f617a0518ead52260dc6ce5e00fe1ff35efe0e646'
 sources, includes = Icarus(data,work_root=str(manifest.parent))._get_fileset_files()
 assert len(sources) == 215 and len(includes) == 4
 assert report['input_manifest']['sources'] == [str((manifest.parent/f.name).resolve()) for f in sources]
