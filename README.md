@@ -57,6 +57,16 @@ The fingerprint is SHA-256 of UTF-8 `json.dumps(input_manifest, sort_keys=True,
 separators=(",", ":"))` using Python's default ASCII escaping. It excludes raw
 engine logs and their nondeterministic timing telemetry; those logs are preserved.
 
+Audited runs also re-inventory declared inputs after the engines finish. The JSON
+`input_consistency` field is `stable` when both manifest hashes match, `changed`
+when they differ, or `error` when a declared input cannot be inspected again.
+Changed/error status makes the command fail while preserving engine diagnostics
+and exit statuses. The post-run hash is recorded on a changed run. This catches
+observed edits during lint; an edit restored before the second audit, or an
+unobserved dependency, remains outside the evidence boundary.
+See [the pinned input-consistency probe](INPUT_CONSISTENCY_EVIDENCE.md) for the
+exact command, versions and observed result.
+
 See [pilot evidence and replay commands](EVIDENCE.md) and the staged
 [qualification roadmap](ROADMAP.md). Neither this audit nor the pilots establishes
 complete source closure, functional correctness, or signoff.

@@ -424,6 +424,19 @@ def main():
         fingerprint = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         report.update(input_manifest=manifest, input_manifest_sha256=fingerprint)
         print(f"input manifest: {fingerprint} (dependency closure UNKNOWN)")
+        try:
+            after = audit_inputs(sources, incdirs, defines, filelists, args.top, args.engine)
+            if args.slang_single_unit:
+                after['slang_compilation_unit'] = 'single'
+            post_fingerprint = hashlib.sha256(json.dumps(after, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            consistency = {'status': 'stable' if post_fingerprint == fingerprint else 'changed',
+                           'post_input_manifest_sha256': post_fingerprint}
+        except (InputError, OSError) as exc:
+            consistency = {'status': 'error', 'error': str(exc)}
+        report['input_consistency'] = consistency
+        if consistency['status'] != 'stable':
+            failed = True
+            print(f"input consistency: {consistency['status']} (audit evidence UNKNOWN)", file=sys.stderr)
     if args.json:
         args.json.write_text(json.dumps(report, indent=2) + "\n")
     return 1 if failed else 0
