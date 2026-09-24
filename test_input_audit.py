@@ -6,6 +6,7 @@ import contextlib
 import io
 import tempfile
 import unittest
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +14,64 @@ from qd_lint import InputError, audit_inputs, main, read_inputs
 
 
 class InputAuditTests(unittest.TestCase):
+    def test_audited_run_detects_changed_header_after_engine(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            header = root / 'header.svh'
+            header.write_text('`define WIDTH 8\n')
+            source = root / 'a.sv'
+            source.write_text('module a; endmodule\n')
+            filelist = root / 'design.vf'
+            filelist.write_text('+incdir+. a.sv\n')
+            output = root / 'report.json'
+
+            def run(argv, **kwargs):
+                if '--version' in argv:
+                    return subprocess.CompletedProcess(argv, 0, 'fake 1.0\n', '')
+                header.write_text('`define WIDTH 16\n')
+                return subprocess.CompletedProcess(argv, 0, '', '')
+
+            with patch('sys.argv', ['qd-lint', 'check', '--filelist', str(filelist),
+                                    '--top', 'a', '--engine', 'slang', '--audit-inputs',
+                                    '--json', str(output)]), \
+                 patch('qd_lint.shutil.which', return_value='/fake/slang'), \
+                 patch('qd_lint.subprocess.run', side_effect=run), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(), 1)
+            report = json.loads(output.read_text())
+            self.assertEqual(report['results'][0]['classification'], 'clean')
+            self.assertEqual(report['input_consistency']['status'], 'changed')
+            self.assertNotEqual(report['input_manifest_sha256'],
+                                report['input_consistency']['post_input_manifest_sha256'])
+            original = {item['path']: item['sha256'] for item in report['input_manifest']['files']}
+            self.assertEqual(original[str(header)], hashlib.sha256(b'`define WIDTH 8\n').hexdigest())
+
+    def test_audited_run_stable_and_removed_input(self):
+        for remove in (False, True):
+            with self.subTest(remove=remove), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                source = root / 'a.sv'
+                source.write_text('module a; endmodule\n')
+                output = root / 'report.json'
+
+                def run(argv, **kwargs):
+                    if '--version' in argv:
+                        return subprocess.CompletedProcess(argv, 0, 'fake 1.0\n', '')
+                    if remove:
+                        source.unlink()
+                    return subprocess.CompletedProcess(argv, 0, '', '')
+
+                with patch('sys.argv', ['qd-lint', 'check', '--filelist', str(source),
+                                        '--top', 'a', '--engine', 'slang', '--audit-inputs',
+                                        '--json', str(output)]), \
+                     patch('qd_lint.shutil.which', return_value='/fake/slang'), \
+                     patch('qd_lint.subprocess.run', side_effect=run), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(), 1 if remove else 0)
+                report = json.loads(output.read_text())
+                self.assertEqual(report['input_consistency']['status'], 'error' if remove else 'stable')
+                self.assertEqual(report['results'][0]['classification'], 'clean')
+
     def test_repeatability_content_and_configuration_sensitivity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
