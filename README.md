@@ -64,6 +64,8 @@ Changed/error status makes the command fail while preserving engine diagnostics
 and exit statuses. The post-run hash is recorded on a changed run. This catches
 observed edits during lint; an edit restored before the second audit, or an
 unobserved dependency, remains outside the evidence boundary.
+See [the pinned input-consistency probe](INPUT_CONSISTENCY_EVIDENCE.md) for the
+exact command, versions and observed result.
 
 See [pilot evidence and replay commands](EVIDENCE.md) and the staged
 [qualification roadmap](ROADMAP.md). Neither this audit nor the pilots establishes
