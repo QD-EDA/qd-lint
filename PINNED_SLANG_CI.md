@@ -75,6 +75,8 @@ non-deterministic selections and validates the exact 224-entry manifest,
 and pinmux register package. QD's EDAM importer must match Edalize's own reader.
 A separate native slang invocation must match zero diagnostics and all 221 observed
 file hashes. A deliberately mismatched CLI top must fail before producing a report.
+The slang wrapper also checks the opt-in portable EDAM identity against the pinned
+digest in `ci/run_pinmux_pilot.py` and requires a stable post-run identity.
 Application sources remain unchanged. Backend deprecation warnings stay in the raw
 resolver logs; no compiler warnings or waiver files are suppressed.
 

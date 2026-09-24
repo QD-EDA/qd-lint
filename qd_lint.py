@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+import copy
 import hashlib
 import json
 import os
@@ -95,8 +96,7 @@ def read_inputs(path):
     return sources, incdirs, defines, filelists
 
 
-def read_edam(path, top):
-    """Read a resolved, option-free EDAM 0.2.1 JSON configuration."""
+def load_edam(path):
     def unique(pairs):
         result = {}
         for key, value in pairs:
@@ -105,11 +105,16 @@ def read_edam(path, top):
             result[key] = value
         return result
 
-    path = path.resolve()
     try:
-        data = json.loads(path.read_text(), object_pairs_hook=unique)
+        return json.loads(path.read_text(), object_pairs_hook=unique)
     except (ValueError, UnicodeError) as error:
         raise InputError(f'invalid EDAM JSON: {error}') from error
+
+
+def read_edam(path, top):
+    """Read a resolved, option-free EDAM 0.2.1 JSON configuration."""
+    path = path.resolve()
+    data = load_edam(path)
     allowed = {'version', 'name', 'toplevel', 'files', 'parameters', 'tool_options',
                'flow_options', 'filters', 'hooks', 'vpi', 'cores', 'dependencies'}
     if not isinstance(data, dict) or set(data) - allowed:
@@ -198,6 +203,53 @@ def audit_inputs(sources, incdirs, defines, filelists, top, engine):
             "scope": "listed files and recursive declared include-directory inventory"}
 
 
+def portable_edam_identity(edam_path, source_root, manifest):
+    """Fingerprint a resolved EDAM selection across relocated export/checkouts."""
+    export = edam_path.resolve().parent
+    source_root = source_root.resolve()
+    data = copy.deepcopy(load_edam(edam_path))
+    cores = data.get('cores') if isinstance(data, dict) else None
+    if not isinstance(cores, dict) or not cores:
+        raise InputError('portable EDAM identity requires a nonempty cores mapping')
+
+    def relative(path, root, label):
+        try:
+            return path.resolve().relative_to(root).as_posix()
+        except ValueError as error:
+            raise InputError(f'{label} leaves its declared root: {path}') from error
+
+    core_files = []
+    for name, core in cores.items():
+        if (not isinstance(name, str) or not isinstance(core, dict) or
+                set(core) != {'core_file', 'dependencies', 'license'} or
+                not isinstance(core['core_file'], str) or not core['core_file'] or
+                not isinstance(core['dependencies'], list) or
+                any(not isinstance(dep, str) for dep in core['dependencies']) or
+                core['license'] is not None):
+            raise InputError('unsupported core metadata in portable EDAM identity')
+        path = export / core['core_file']
+        normalized = relative(path, source_root, 'EDAM core_file')
+        if not path.is_file():
+            raise InputError(f'EDAM core_file is missing or not regular: {path}')
+        core['core_file'] = '@source/' + normalized
+        core_files.append({'path': normalized, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+
+    def exported(path):
+        return '@export/' + relative(Path(path), export, 'EDAM input')
+
+    declared = copy.deepcopy(manifest)
+    for key in ('sources', 'include_directories'):
+        declared[key] = [exported(path) for path in declared[key]]
+    declared['filelists'] = ['@edam' if Path(path) == edam_path.resolve() else exported(path)
+                             for path in declared['filelists']]
+    declared['files'] = [dict(path=exported(item['path']), sha256=item['sha256'])
+                         for item in declared['files'] if Path(item['path']) != edam_path.resolve()]
+    payload = {'schema_version': 1, 'edam': data, 'core_files': sorted(core_files, key=lambda item: item['path']),
+               'declared_inputs': declared, 'dependency_closure_complete': False}
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return {'sha256': digest, 'payload': payload}
+
+
 def capture_dependencies(path, sources):
     """Hash slang's observed files; this is not a hermetic dependency closure."""
     result = {'status': 'error', 'raw': None, 'files': [],
@@ -266,6 +318,8 @@ def main():
     inputs = check.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--filelist", type=Path, help="filelist or direct .sv/.v source")
     inputs.add_argument('--edam-json', type=Path, help='resolved EDAM 0.2.1 JSON with no parameters or backend options')
+    check.add_argument('--edam-source-root', type=Path,
+                       help='opt-in portable EDAM identity using this pinned source checkout (requires --audit-inputs)')
     check.add_argument("--top", required=True)
     check.add_argument("--engine", choices=("verilator", "slang", "both"), default="both")
     check.add_argument("--json", type=Path)
@@ -280,6 +334,8 @@ def main():
     check.add_argument('--normalize-diagnostics', action='store_true',
                        help='project slang native diagnostics with raw-record pointers (requires native capture)')
     args = parser.parse_args()
+    if args.edam_source_root and (not args.edam_json or not args.audit_inputs):
+        parser.error('--edam-source-root requires --edam-json and --audit-inputs')
     if args.normalize_diagnostics and (args.engine != 'slang' or not args.native_diagnostics):
         parser.error('--normalize-diagnostics requires --engine slang and --native-diagnostics')
     if args.slang_dependencies and (args.engine == 'verilator' or not args.json):
@@ -289,9 +345,15 @@ def main():
     if args.native_diagnostics and not args.json:
         parser.error("--native-diagnostics requires --json to preserve the native report")
     try:
+        edam_before = hashlib.sha256(args.edam_json.read_bytes()).digest() if args.edam_source_root else None
         sources, incdirs, defines, filelists = (read_edam(args.edam_json, args.top) if args.edam_json
                                                else read_inputs(args.filelist))
         manifest = audit_inputs(sources, incdirs, defines, filelists, args.top, args.engine) if args.audit_inputs else None
+        if manifest is not None and args.slang_single_unit:
+            manifest['slang_compilation_unit'] = 'single'
+        portable = portable_edam_identity(args.edam_json, args.edam_source_root, manifest) if args.edam_source_root else None
+        if edam_before is not None and hashlib.sha256(args.edam_json.read_bytes()).digest() != edam_before:
+            raise InputError('EDAM changed while preparing lint inputs')
     except (InputError, OSError) as exc:
         print(f"qd-lint: {exc}", file=sys.stderr)
         return 2
@@ -418,12 +480,13 @@ def main():
         report['configuration_file'] = str(args.edam_json.resolve())
     if args.slang_single_unit:
         report['slang_compilation_unit'] = 'single'
-        if manifest is not None:
-            manifest['slang_compilation_unit'] = 'single'
+    if portable is not None:
+        report['portable_edam_identity'] = portable
     if manifest is not None:
         fingerprint = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         report.update(input_manifest=manifest, input_manifest_sha256=fingerprint)
         print(f"input manifest: {fingerprint} (dependency closure UNKNOWN)")
+        after = None
         try:
             after = audit_inputs(sources, incdirs, defines, filelists, args.top, args.engine)
             if args.slang_single_unit:
@@ -437,6 +500,19 @@ def main():
         if consistency['status'] != 'stable':
             failed = True
             print(f"input consistency: {consistency['status']} (audit evidence UNKNOWN)", file=sys.stderr)
+        if portable is not None:
+            try:
+                if after is None:
+                    raise InputError('declared input audit failed after lint')
+                after_portable = portable_edam_identity(args.edam_json, args.edam_source_root, after)
+                portable_consistency = {'status': 'stable' if after_portable['sha256'] == portable['sha256'] else 'changed',
+                                        'post_sha256': after_portable['sha256']}
+            except (InputError, OSError) as exc:
+                portable_consistency = {'status': 'error', 'error': str(exc)}
+            report['portable_edam_consistency'] = portable_consistency
+            if portable_consistency['status'] != 'stable':
+                failed = True
+                print(f"portable EDAM consistency: {portable_consistency['status']} (identity UNKNOWN)", file=sys.stderr)
     if args.json:
         args.json.write_text(json.dumps(report, indent=2) + "\n")
     return 1 if failed else 0

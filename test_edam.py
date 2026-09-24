@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ import io
 import subprocess
 from unittest.mock import patch
 
-from qd_lint import InputError, read_edam, main
+from qd_lint import InputError, audit_inputs, portable_edam_identity, read_edam, main
 
 
 class EdamTests(unittest.TestCase):
@@ -86,3 +87,85 @@ class EdamTests(unittest.TestCase):
              patch('qd_lint.subprocess.run',side_effect=AssertionError('engine must not run')), \
              contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main(),2)
+
+    def test_portable_identity_across_exports_and_changed_core(self):
+        identities = []
+        for label in ('first', 'second'):
+            root = self.root/label
+            source, export = root/'source', root/'export'
+            source.mkdir(parents=True); export.mkdir()
+            (source/'core.core').write_text('CAPI=2:\n')
+            (export/'a.sv').write_text('module a; endmodule\n')
+            (export/'inc').mkdir(); (export/'inc/defs.svh').write_text('`define V 1\n')
+            data = dict(self.data, cores={'fixture:core': {'core_file': os.path.relpath(source/'core.core', export),
+                                                          'dependencies': [], 'license': None}})
+            edam = export/'input.json'; edam.write_text(json.dumps(data))
+            inputs = read_edam(edam, 'a')
+            manifest = audit_inputs(*inputs, 'a', 'slang')
+            identities.append((edam, source, manifest, portable_edam_identity(edam, source, manifest)))
+        self.assertEqual(identities[0][3]['sha256'], identities[1][3]['sha256'])
+        self.assertNotEqual(identities[0][2]['sources'], identities[1][2]['sources'])
+        edam, source, manifest, original = identities[0]
+        (source/'core.core').write_text('changed\n')
+        self.assertNotEqual(original['sha256'], portable_edam_identity(edam, source, manifest)['sha256'])
+        (source/'core.core').unlink()
+        with self.assertRaisesRegex(InputError, 'missing or not regular'):
+            portable_edam_identity(edam, source, manifest)
+        with self.assertRaisesRegex(InputError, 'leaves its declared root'):
+            portable_edam_identity(edam, self.root/'second/source', manifest)
+
+    def test_portable_identity_detects_core_change_during_engine(self):
+        source = self.root/'source'; source.mkdir()
+        core = source/'core.core'; core.write_text('first\n')
+        self.data['cores'] = {'fixture:core': {'core_file': os.path.relpath(core, self.root),
+                                              'dependencies': [], 'license': None}}
+        self.read()
+        report = self.root/'report.json'
+        def run(argv, **kwargs):
+            if '--version' in argv:
+                return subprocess.CompletedProcess(argv, 0, 'fake 1.0\n', '')
+            core.write_text('changed\n')
+            return subprocess.CompletedProcess(argv, 0, '', '')
+        args = ['qd-lint', 'check', '--edam-json', str(self.path), '--edam-source-root', str(source),
+                '--top', 'a', '--engine', 'slang', '--audit-inputs', '--json', str(report)]
+        with patch('sys.argv', args), patch('qd_lint.shutil.which', return_value='/fake/slang'), \
+             patch('qd_lint.subprocess.run', side_effect=run), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(), 1)
+        data = json.loads(report.read_text())
+        self.assertEqual(data['results'][0]['classification'], 'clean')
+        self.assertEqual(data['input_consistency']['status'], 'stable')
+        self.assertEqual(data['portable_edam_consistency']['status'], 'changed')
+
+    def test_portable_identity_requires_edam_and_audit(self):
+        for arguments in (['--edam-json', str(self.path)],
+                          ['--filelist', str(self.root/'a.sv'), '--audit-inputs']):
+            with self.subTest(arguments=arguments), patch('sys.argv',
+                    ['qd-lint', 'check', *arguments, '--edam-source-root', str(self.root), '--top', 'a']), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    main()
+                self.assertEqual(error.exception.code, 2)
+
+    def test_edam_change_between_parse_and_audit_is_rejected_before_engine(self):
+        source = self.root/'source'; source.mkdir()
+        core = source/'core.core'; core.write_text('core\n')
+        self.data['cores'] = {'fixture:core': {'core_file': os.path.relpath(core, self.root),
+                                              'dependencies': [], 'license': None}}
+        self.read()
+        (self.root/'b.sv').write_text('module b; endmodule\n')
+        original = read_edam
+
+        def mutate_after_parse(path, top):
+            selected = original(path, top)
+            self.data['files'].append({'name': 'b.sv', 'file_type': 'systemVerilogSource'})
+            self.path.write_text(json.dumps(self.data))
+            return selected
+
+        report = self.root/'report.json'
+        args = ['qd-lint', 'check', '--edam-json', str(self.path), '--edam-source-root', str(source),
+                '--top', 'a', '--engine', 'slang', '--audit-inputs', '--json', str(report)]
+        with patch('sys.argv', args), patch('qd_lint.read_edam', side_effect=mutate_after_parse), \
+             patch('qd_lint.subprocess.run', side_effect=AssertionError('engine must not run')), \
+             contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(), 2)
+        self.assertFalse(report.exists())
