@@ -60,6 +60,20 @@ class NativeDiagnosticsTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result['native_diagnostics']['data'], [])
 
+    def test_verilator_sarif_clean_warning_and_bad_capture(self):
+        clean = {'version': '2.1.0', 'runs': [{'results': []}]}
+        warning = {'version': '2.1.0', 'runs': [{'results': [
+            {'ruleId': 'WIDTHEXPAND', 'level': 'warning', 'message': {'text': 'width mismatch'}}]}]}
+        for payload, expected in ((json.dumps(clean), 'clean'),
+                                  (json.dumps(warning), 'warning'),
+                                  (None, 'error'), ('{bad', 'error')):
+            with self.subTest(payload=payload):
+                code, result = self.run_case('verilator', payload)
+                self.assertEqual(result['classification'], expected)
+                self.assertEqual(code, int(expected != 'clean'))
+                self.assertEqual(result['exit_status'], 0)
+                self.assertEqual(result['native_diagnostics']['raw'], payload)
+
     def test_missing_malformed_and_wrong_shape_never_pass(self):
         for payload in (None, '', '{broken', '{}', 'null'):
             with self.subTest(payload=payload):

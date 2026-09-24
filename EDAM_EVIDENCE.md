@@ -113,11 +113,9 @@ probe found that slang 11.0.448 accepts EDAM with `pinmux_reg_pkg.sv` omitted,
 which is why the pilot checks that required source explicitly rather than treating
 an empty diagnostic set as proof of configuration completeness.
 
-The Ubuntu workflow installs Verilator and records its actual package/version in
-the evidence artifact. Ubuntu 24.04's Verilator 5.020 predates [SARIF support added
-in 5.038](https://verilator.org/guide/latest/changes.html), so that CI lane checks
-raw diagnostic parity and labels native SARIF unsupported. The package is still a
-floating CI smoke lane, not a qualified engine pin. This result checks each
+The earlier Ubuntu workflow installed Verilator 5.020, which predates SARIF
+support, so it checked raw diagnostics only. The pinned Verilator 5.050 source
+build now requires SARIF parity and the same `WIDTHEXPAND` location. This result checks each
 wrapper against its corresponding direct engine; it does not establish that slang
 and Verilator implement equivalent rules. It is not a clean two-engine lint pass
 or production qualification.

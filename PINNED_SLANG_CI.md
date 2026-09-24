@@ -60,7 +60,15 @@ lint, reviewed rule policy, waivers, baselines or production qualification.
 
 ## Earlgrey pinmux EDAM lane
 
-The same job now creates a separate Python environment for FuseSoC 2.4.5 and
+The same job builds Verilator 5.050 from commit
+`848d926ebd4addacacd294dc84e35d9d4ae8078c` and records its binary hash.
+The pinmux lane requires SARIF from that binary; a missing or malformed report
+fails the QD wrapper, and the direct engine's SARIF results must match. The
+existing `WIDTHEXPAND` at `prim_diff_decode.sv:162:28` must remain visible and
+failing. This is diagnostic transport evidence, not an approved waiver or
+rule-policy decision.
+
+The same job creates a separate Python environment for FuseSoC 2.4.5 and
 Edalize 0.6.3. All thirteen resolved Python packages have exact versions and
 SHA-256 wheel hashes in ci/pinmux-requirements.txt, selected for Ubuntu x86-64 /
 CPython 3.12. The complete dependency set was verified using pip's hash-checking
