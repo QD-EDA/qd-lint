@@ -171,3 +171,7 @@ An EDAM edit while preparing the initial inputs fails before either engine runs.
 This identity excludes tool binaries, implicit dependencies and unobserved
 changes restored between checks. It is comparison evidence, not a cache key or
 qualification claim. See [the two-checkout pinmux probe](PORTABLE_EDAM_EVIDENCE.md).
+
+## Status
+
+Active prototype, Sep 2026.
